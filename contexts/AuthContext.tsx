@@ -1,14 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import type { Profile, Role } from '../types/database';
+import type { Profile } from '../types/database';
 
 interface SignUpParams {
   email: string;
   password: string;
   firstName: string;
   lastName: string;
-  role: Role;
+  phone: string;
+  referralSource: string;
 }
 
 interface AuthContextValue {
@@ -85,10 +86,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error ? error.message : null };
   };
 
-  const signUp: AuthContextValue['signUp'] = async ({ email, password, firstName, lastName, role }) => {
+  const signUp: AuthContextValue['signUp'] = async ({
+    email,
+    password,
+    firstName,
+    lastName,
+    phone,
+    referralSource,
+  }) => {
     // The `data` object here becomes `raw_user_meta_data` on the new
-    // auth.users row, which our Postgres trigger (handle_new_user) reads
-    // to decide the role and validate the invitation.
+    // auth.users row, which our Postgres trigger (handle_new_user) reads.
+    // We deliberately don't send a role — the trigger decides it from the
+    // server-side admin_allowlist / invitations tables, so a hand-crafted
+    // signUp() call can't mint itself an admin account.
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -96,7 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         data: {
           first_name: firstName,
           last_name: lastName,
-          role,
+          phone,
+          referral_source: referralSource,
         },
       },
     });

@@ -4,6 +4,7 @@ import type { Task } from '../types/database';
 import type { LogWithTask } from '../utils/stats';
 import { buildDateRange, getCellState } from '../utils/matrix';
 import { getLocalDateString } from '../utils/date';
+import { rangeIsEmpty, type DateRange } from '../utils/dateRange';
 
 interface Props {
   tasks: Task[];
@@ -13,6 +14,10 @@ interface Props {
   // stats). The Student's own History tab omits this, so labels there
   // stay plain, non-interactive text.
   onPressTask?: (task: Task) => void;
+  // Optional — when provided, the columns cover exactly this range instead
+  // of "earliest log through today" (used by the date filter on the Admin's
+  // per-student screen).
+  range?: DateRange;
 }
 
 const CELL_SIZE = 36;
@@ -34,10 +39,10 @@ function formatColumnHeader(dateStr: string): { weekday: string; day: string } {
 // horizontally scrollable columns on the right, docked to "today" by
 // default. Used identically by the Student's own History tab and the
 // Admin's per-student detail screen.
-export default function HabitMatrix({ tasks, logs, onPressTask }: Props) {
+export default function HabitMatrix({ tasks, logs, onPressTask, range }: Props) {
   const scrollRef = useRef<ScrollView>(null);
 
-  if (tasks.length === 0) {
+  if (tasks.length === 0 || (range && rangeIsEmpty(range))) {
     return (
       <View style={styles.emptyContainer}>
         <Text style={styles.emptyText}>No habits to show yet.</Text>
@@ -53,7 +58,9 @@ export default function HabitMatrix({ tasks, logs, onPressTask }: Props) {
   // If there's no history at all yet, just show today as a single column
   // rather than an empty/confusing range.
   const startDate = earliestLogDate && earliestLogDate < today ? earliestLogDate : today;
-  const dates = buildDateRange(startDate, today);
+  const dates = range
+    ? buildDateRange(range.start, range.end)
+    : buildDateRange(startDate, today);
 
   return (
     <View>
@@ -64,7 +71,7 @@ export default function HabitMatrix({ tasks, logs, onPressTask }: Props) {
           <View style={styles.headerSpacer} />
           {tasks.map((task) => {
             const label = (
-              <Text style={styles.labelText} numberOfLines={1}>
+              <Text style={[styles.labelText, { color: task.color }]} numberOfLines={1}>
                 {task.title}
               </Text>
             );

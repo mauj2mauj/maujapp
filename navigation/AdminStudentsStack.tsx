@@ -14,6 +14,7 @@ export type AdminStudentsStackParamList = {
     taskId: string;
     taskTitle: string;
     taskType: TaskType;
+    taskColor: string;
     taskCreatedAt: string;
     studentJoinedAt: string;
   };

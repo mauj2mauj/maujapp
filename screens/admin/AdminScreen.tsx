@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
+import BrandHeader from '../../components/BrandHeader';
 import AdminStudentsStack from '../../navigation/AdminStudentsStack';
 import HabitManagementTab from './tabs/HabitManagementTab';
 
@@ -18,9 +19,11 @@ export default function AdminScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <BrandHeader />
+
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Mauj Admin</Text>
+          <Text style={styles.headerTitle}>Admin</Text>
           <Text style={styles.headerSubtitle}>
             {profile?.first_name} {profile?.last_name}
           </Text>

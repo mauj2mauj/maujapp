@@ -8,30 +8,47 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import type { AuthStackParamList } from '../../navigation/RootNavigator';
-import type { Role } from '../../types/database';
+import BrandHeader from '../../components/BrandHeader';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
 
+// Accepts an optional leading + and 10-15 digits, which covers Indian
+// 10-digit numbers as well as anything written in full international form.
+const PHONE_REGEX = /^\+?\d{10,15}$/;
+
 export default function SignUpScreen({ navigation }: Props) {
   const { signUp } = useAuth();
-  const [role, setRole] = useState<Role>('student');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [referralSource, setReferralSource] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Spaces, dashes and brackets are how people naturally type a number;
+  // strip them before validating and before storing.
+  const normalizedPhone = phone.replace(/[\s\-()]/g, '');
+
   const handleSignUp = async () => {
     setError(null);
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !email || !phone || !password) {
       setError('Please fill in all fields.');
+      return;
+    }
+    if (!PHONE_REGEX.test(normalizedPhone)) {
+      setError('Enter a valid phone number (10-15 digits).');
+      return;
+    }
+    if (!referralSource.trim()) {
+      setError('Please tell us how you heard about Mauj.');
       return;
     }
     if (password.length < 6) {
@@ -41,21 +58,19 @@ export default function SignUpScreen({ navigation }: Props) {
 
     setSubmitting(true);
 
-    if (role === 'student') {
-      const { data: hasInvitation, error: checkError } = await supabase.rpc(
-        'check_pending_invitation',
-        { check_email: email.trim() }
-      );
-      if (checkError) {
-        setSubmitting(false);
-        setError('Could not verify invitation. Please try again.');
-        return;
-      }
-      if (!hasInvitation) {
-        setSubmitting(false);
-        setError('No invitation found for this email. Ask your admin to invite you first.');
-        return;
-      }
+    const { data: mayRegister, error: checkError } = await supabase.rpc(
+      'check_pending_invitation',
+      { check_email: email.trim() }
+    );
+    if (checkError) {
+      setSubmitting(false);
+      setError('Could not verify invitation. Please try again.');
+      return;
+    }
+    if (!mayRegister) {
+      setSubmitting(false);
+      setError('No invitation found for this email. Ask your admin to invite you first.');
+      return;
     }
 
     const { error: signUpError } = await signUp({
@@ -63,7 +78,8 @@ export default function SignUpScreen({ navigation }: Props) {
       password,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
-      role,
+      phone: normalizedPhone,
+      referralSource: referralSource.trim(),
     });
     setSubmitting(false);
     if (signUpError) setError(signUpError);
@@ -72,43 +88,28 @@ export default function SignUpScreen({ navigation }: Props) {
   };
 
   return (
+    <SafeAreaView style={styles.safe}>
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Create Account</Text>
+        <BrandHeader />
+        <Text style={styles.subtitle}>Create account</Text>
 
-        <Text style={styles.label}>I am a...</Text>
-        <View style={styles.roleToggle}>
-          <TouchableOpacity
-            style={[styles.roleButton, role === 'student' && styles.roleButtonActive]}
-            onPress={() => setRole('student')}
-          >
-            <Text style={[styles.roleButtonText, role === 'student' && styles.roleButtonTextActive]}>
-              Student
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.roleButton, role === 'admin' && styles.roleButtonActive]}
-            onPress={() => setRole('admin')}
-          >
-            <Text style={[styles.roleButtonText, role === 'admin' && styles.roleButtonTextActive]}>
-              Admin
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.hint}>
+          You can only register with an email your admin has already invited.
+        </Text>
 
-        {role === 'student' ? (
-          <Text style={styles.hint}>
-            You can only register with an email your admin has already invited.
-          </Text>
-        ) : null}
-
+        {/* autoComplete matters on web: without an explicit hint the browser's
+            saved-credential autofill guesses, and drops the email into
+            whichever text box it sees first. */}
         <TextInput
           style={styles.input}
           placeholder="First Name"
           placeholderTextColor="#999"
+          autoComplete="given-name"
+          textContentType="givenName"
           value={firstName}
           onChangeText={setFirstName}
         />
@@ -116,6 +117,8 @@ export default function SignUpScreen({ navigation }: Props) {
           style={styles.input}
           placeholder="Last Name"
           placeholderTextColor="#999"
+          autoComplete="family-name"
+          textContentType="familyName"
           value={lastName}
           onChangeText={setLastName}
         />
@@ -125,16 +128,40 @@ export default function SignUpScreen({ navigation }: Props) {
           placeholderTextColor="#999"
           autoCapitalize="none"
           keyboardType="email-address"
+          autoComplete="email"
+          textContentType="emailAddress"
           value={email}
           onChangeText={setEmail}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Phone Number"
+          placeholderTextColor="#999"
+          keyboardType="phone-pad"
+          autoComplete="tel"
+          textContentType="telephoneNumber"
+          value={phone}
+          onChangeText={setPhone}
         />
         <TextInput
           style={styles.input}
           placeholder="Password"
           placeholderTextColor="#999"
           secureTextEntry
+          autoComplete="new-password"
+          textContentType="newPassword"
           value={password}
           onChangeText={setPassword}
+        />
+
+        <Text style={styles.label}>How did you hear about Mauj?</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. friend, Instagram, school"
+          placeholderTextColor="#999"
+          autoComplete="off"
+          value={referralSource}
+          onChangeText={setReferralSource}
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -152,27 +179,17 @@ export default function SignUpScreen({ navigation }: Props) {
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#fff' },
   container: { flex: 1, backgroundColor: '#fff' },
-  scrollContent: { padding: 24, paddingTop: 60, flexGrow: 1 },
-  title: { fontSize: 28, fontWeight: '700', textAlign: 'center', marginBottom: 24 },
-  label: { fontSize: 13, color: '#666', marginBottom: 6 },
-  roleToggle: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    borderRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#4f46e5',
-  },
-  roleButton: { flex: 1, padding: 12, alignItems: 'center', backgroundColor: '#fff' },
-  roleButtonActive: { backgroundColor: '#4f46e5' },
-  roleButtonText: { color: '#4f46e5', fontWeight: '600' },
-  roleButtonTextActive: { color: '#fff' },
+  scrollContent: { padding: 24, paddingTop: 12, flexGrow: 1 },
+  subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 20, marginTop: 4 },
   hint: { color: '#666', fontSize: 13, marginBottom: 16, textAlign: 'center' },
+  label: { fontSize: 13, fontWeight: '600', color: '#333', marginTop: 4, marginBottom: 8 },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',

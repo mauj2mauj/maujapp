@@ -12,8 +12,13 @@ import {
 } from 'react-native';
 import { useAuth } from '../../../contexts/AuthContext';
 import { supabase } from '../../../lib/supabase';
-import type { Task } from '../../../types/database';
-import { getLocalDateString } from '../../../utils/date';
+import type { DailyLog, Task } from '../../../types/database';
+import { getLocalDateString, subtractDays } from '../../../utils/date';
+import {
+  allHabitsDoneOnDay,
+  lastSevenDaysAllComplete,
+} from '../../../utils/studentMotivation';
+import CelebrationModal from '../../../components/CelebrationModal';
 
 interface LogRow {
   task: Task;
@@ -29,16 +34,41 @@ export default function TodayTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recentLogs, setRecentLogs] = useState<
+    Pick<DailyLog, 'task_id' | 'date' | 'completed' | 'duration_minutes'>[]
+  >([]);
+  const [celebration, setCelebration] = useState<'day' | 'week' | null>(null);
 
   const today = getLocalDateString();
+
+  const maybeCelebrate = (
+    tasks: Task[],
+    logs: Pick<DailyLog, 'task_id' | 'date' | 'completed' | 'duration_minutes'>[]
+  ) => {
+    if (!profile) return;
+    if (lastSevenDaysAllComplete(tasks, logs, profile.created_at)) {
+      setCelebration('week');
+    } else if (allHabitsDoneOnDay(tasks, logs, profile.created_at, today)) {
+      setCelebration('day');
+    }
+  };
 
   const loadTasksAndLogs = useCallback(async () => {
     if (!profile) return;
     setError(null);
 
     const [tasksResult, logsResult] = await Promise.all([
-      supabase.from('tasks').select('*').eq('is_active', true).order('created_at', { ascending: true }),
-      supabase.from('daily_logs').select('*').eq('student_id', profile.id).eq('date', today),
+      supabase
+        .from('tasks')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('daily_logs')
+        .select('task_id, date, completed, duration_minutes')
+        .eq('student_id', profile.id)
+        .gte('date', subtractDays(today, 6)),
     ]);
 
     if (tasksResult.error) {
@@ -49,11 +79,15 @@ export default function TodayTab() {
     }
 
     const tasks = (tasksResult.data ?? []) as Task[];
-    const logs = logsResult.data ?? [];
+    const logs = (logsResult.data ?? []) as Pick<
+      DailyLog,
+      'task_id' | 'date' | 'completed' | 'duration_minutes'
+    >[];
+    setRecentLogs(logs);
 
     setRows(
       tasks.map((task) => {
-        const existingLog = logs.find((log) => log.task_id === task.id);
+        const existingLog = logs.find((log) => log.task_id === task.id && log.date === today);
         return {
           task,
           completed: existingLog?.completed ?? false,
@@ -66,6 +100,7 @@ export default function TodayTab() {
     );
     setLoading(false);
     setRefreshing(false);
+    maybeCelebrate(tasks, logs);
   }, [profile, today]);
 
   useEffect(() => {
@@ -108,6 +143,15 @@ export default function TodayTab() {
       );
     } else {
       flashSaved(taskId);
+      const nextLogs = [
+        ...recentLogs.filter((log) => !(log.task_id === taskId && log.date === today)),
+        { task_id: taskId, date: today, completed: value, duration_minutes: null },
+      ];
+      setRecentLogs(nextLogs);
+      maybeCelebrate(
+        rows.map((row) => row.task),
+        nextLogs
+      );
     }
   };
 
@@ -155,6 +199,15 @@ export default function TodayTab() {
       setError(upsertError.message);
     } else {
       flashSaved(taskId);
+      const nextLogs = [
+        ...recentLogs.filter((log) => !(log.task_id === taskId && log.date === today)),
+        { task_id: taskId, date: today, completed: safeMinutes > 0, duration_minutes: safeMinutes },
+      ];
+      setRecentLogs(nextLogs);
+      maybeCelebrate(
+        rows.map((row) => row.task),
+        nextLogs
+      );
     }
   };
 
@@ -189,7 +242,7 @@ export default function TodayTab() {
         renderItem={({ item }) => (
           <View style={styles.row}>
             <View style={styles.rowHeader}>
-              <Text style={styles.rowTitle}>{item.task.title}</Text>
+              <Text style={[styles.rowTitle, { color: item.task.color }]}>{item.task.title}</Text>
               {item.saving ? (
                 <ActivityIndicator size="small" color="#4f46e5" />
               ) : item.justSaved ? (
@@ -229,6 +282,21 @@ export default function TodayTab() {
             )}
           </View>
         )}
+      />
+
+      <CelebrationModal
+        visible={celebration !== null}
+        punjabi={
+          celebration === 'week'
+            ? 'ਵਧਾਈਆਂ — ਤੁਸੀਂ ਪੂਰਾ ਹਫਤਾ ਮੌਜ ਕੀਤੀ'
+            : 'ਵਧਾਈਆਂ — ਅੱਜ ਮੌਜ ਕਰਨ ਲਈ'
+        }
+        english={
+          celebration === 'week'
+            ? 'You completed every habit for 7 days in a row.'
+            : 'You completed every habit today.'
+        }
+        onClose={() => setCelebration(null)}
       />
     </View>
   );

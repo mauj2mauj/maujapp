@@ -1,16 +1,44 @@
 import type { TaskType } from '../types/database';
-import { daysBetween, type LogWithTask } from './stats';
+import type { LogWithTask } from './stats';
 import { getLocalDateString } from './date';
+import { clampRange, eachDay, rangeIsEmpty, type DateRange } from './dateRange';
+
+export interface WeekdayBucket {
+  weekday: number;
+  label: string;
+  completed: number;
+  total: number;
+  percent: number;
+}
+
+export interface WeekBucket {
+  start: string;
+  end: string;
+  label: string;
+  completed: number;
+  total: number;
+  percent: number;
+}
+
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export interface HabitStats {
-  habitStartDate: string;
-  totalDaysSinceStart: number;
-  totalCompleted: number;
+  // The range actually measured, after clamping to the habit's start and
+  // today — this is what the screen should label the numbers with, not the
+  // range the user picked.
+  effectiveRange: DateRange;
+  isEmpty: boolean;
+  totalDays: number;
+  completedDays: number;
+  missedDays: number;
   completionPercent: number;
-  currentStreak: number;
-  longestStreak: number;
-  last7CompletionPercent: number;
-  last30CompletionPercent: number;
+  completedDates: Set<string>;
+  // Most recent completed day inside the range, or null if there wasn't one.
+  lastCompletedDate: string | null;
+  // Seven entries, Sunday first — how the student does on each weekday.
+  weekdayBreakdown: WeekdayBucket[];
+  // The range chopped into 7-day buckets from its start, for the trend chart.
+  weeklyBreakdown: WeekBucket[];
   // Duration-only extras — undefined for boolean habits.
   totalMinutes?: number;
   avgMinutesPerDay?: number;
@@ -19,114 +47,122 @@ export interface HabitStats {
 
 // The first day a habit could actually have been logged by this student —
 // whichever came later: the admin creating the task, or the student
-// joining. Everything before this date is out of scope for "since day
-// one" stats (the habit simply didn't exist for this student yet).
+// joining. Everything before this date is out of scope for stats (the
+// habit simply didn't exist for this student yet).
 export function getHabitStartDate(taskCreatedAt: string, studentJoinedAt: string): string {
   const taskDate = getLocalDateString(new Date(taskCreatedAt));
   const joinedDate = getLocalDateString(new Date(studentJoinedAt));
   return taskDate > joinedDate ? taskDate : joinedDate;
 }
 
-function subtractDays(dateStr: string, days: number): string {
-  const date = new Date(`${dateStr}T00:00:00`);
-  date.setDate(date.getDate() - days);
-  return getLocalDateString(date);
-}
-
-// Percent of days completed within [windowStart, today] out of the total
-// calendar days in that window — a missing log counts against the
-// student, matching the app's binary done/missed model.
-function windowCompletionPercent(habitLogs: LogWithTask[], windowStart: string, today: string): number {
-  const totalDays = daysBetween(today, windowStart) + 1;
-  if (totalDays <= 0) return 0;
-  const completedInWindow = habitLogs.filter(
-    (log) => log.completed && log.date >= windowStart && log.date <= today
-  ).length;
-  return Math.round((completedInWindow / totalDays) * 100);
-}
-
-// Computes every stat shown on the per-habit detail screen (and the
-// habit-comparison chart) for one student + habit combination. `logs` may
-// contain entries for other tasks too — this filters down to `taskId`
-// internally so callers can simply pass whatever they already fetched.
+// Computes every stat shown for one student + habit within a date range.
+// `logs` may contain entries for other tasks too — this filters down to
+// `taskId` internally so callers can pass whatever they already fetched.
+//
+// The whole calculation walks the calendar day by day rather than walking
+// the log rows, because a day with no row at all counts as missed. That's
+// the app's model everywhere else (see getCellState), and doing it this way
+// means streaks and percentages can't disagree with the calendar grid.
 export function computeHabitStats(
   logs: LogWithTask[],
   taskId: string,
   taskType: TaskType,
-  habitStartDate: string
+  habitStartDate: string,
+  requestedRange: DateRange
 ): HabitStats {
+  const effectiveRange = clampRange(requestedRange, habitStartDate);
   const habitLogs = logs.filter((log) => log.task_id === taskId);
-  const today = getLocalDateString();
 
-  // +1 because both endpoints are inclusive (e.g. starting and ending on
-  // the same day is 1 day, not 0).
-  const totalDaysSinceStart = Math.max(daysBetween(today, habitStartDate) + 1, 1);
-  const totalCompleted = habitLogs.filter((log) => log.completed).length;
-  const completionPercent = Math.round((totalCompleted / totalDaysSinceStart) * 100);
+  const completedDates = new Set(
+    habitLogs
+      .filter(
+        (log) =>
+          log.completed && log.date >= effectiveRange.start && log.date <= effectiveRange.end
+      )
+      .map((log) => log.date)
+  );
 
-  const last7WindowStart = maxDateString(habitStartDate, subtractDays(today, 6));
-  const last30WindowStart = maxDateString(habitStartDate, subtractDays(today, 29));
-  const last7CompletionPercent = windowCompletionPercent(habitLogs, last7WindowStart, today);
-  const last30CompletionPercent = windowCompletionPercent(habitLogs, last30WindowStart, today);
-
-  // Longest streak: walk forward through logged rows (oldest first),
-  // growing a run while each log is completed and exactly 1 calendar day
-  // after the previous one counted; any gap (missing day) or an explicit
-  // miss resets the run. A missing day already breaks this the same way a
-  // miss does, since the date gap won't be exactly 1.
-  const ascending = [...habitLogs].sort((a, b) => (a.date < b.date ? -1 : 1));
-  let longestStreak = 0;
-  let runLength = 0;
-  let previousRunDate: string | null = null;
-  for (const log of ascending) {
-    if (!log.completed) {
-      runLength = 0;
-      previousRunDate = null;
-      continue;
-    }
-    if (previousRunDate !== null && daysBetween(log.date, previousRunDate) === 1) {
-      runLength += 1;
-    } else {
-      runLength = 1;
-    }
-    previousRunDate = log.date;
-    longestStreak = Math.max(longestStreak, runLength);
+  if (rangeIsEmpty(effectiveRange)) {
+    return {
+      effectiveRange,
+      isEmpty: true,
+      totalDays: 0,
+      completedDays: 0,
+      missedDays: 0,
+      completionPercent: 0,
+      completedDates,
+      lastCompletedDate: null,
+      weekdayBreakdown: [],
+      weeklyBreakdown: [],
+      ...(taskType === 'duration'
+        ? { totalMinutes: 0, avgMinutesPerDay: 0, bestDayMinutes: 0 }
+        : {}),
+    };
   }
 
-  // Current streak: walk backward from the most recent logged day, same
-  // "any gap breaks it" rule.
-  const descending = [...ascending].reverse();
-  let currentStreak = 0;
-  let previousDate: string | null = null;
-  for (const log of descending) {
-    if (!log.completed) break;
-    if (previousDate !== null && daysBetween(previousDate, log.date) !== 1) break;
-    currentStreak += 1;
-    previousDate = log.date;
+  const days = eachDay(effectiveRange);
+  const totalDays = days.length;
+  const completedDays = completedDates.size;
+
+  const weekdayCounts = WEEKDAY_LABELS.map((label, weekday) => ({
+    weekday,
+    label,
+    completed: 0,
+    total: 0,
+    percent: 0,
+  }));
+  const weeklyBreakdown: WeekBucket[] = [];
+  let lastCompletedDate: string | null = null;
+
+  days.forEach((day, index) => {
+    const done = completedDates.has(day);
+    if (done) lastCompletedDate = day;
+
+    const bucket = weekdayCounts[new Date(`${day}T00:00:00`).getDay()];
+    bucket.total += 1;
+    if (done) bucket.completed += 1;
+
+    // Weeks are 7-day blocks counted from the start of the range rather
+    // than calendar weeks, so the first bar is never a stub.
+    if (index % 7 === 0) {
+      weeklyBreakdown.push({ start: day, end: day, label: '', completed: 0, total: 0, percent: 0 });
+    }
+    const week = weeklyBreakdown[weeklyBreakdown.length - 1];
+    week.end = day;
+    week.total += 1;
+    if (done) week.completed += 1;
+  });
+
+  for (const bucket of weekdayCounts) {
+    bucket.percent = bucket.total > 0 ? Math.round((bucket.completed / bucket.total) * 100) : 0;
+  }
+  for (const week of weeklyBreakdown) {
+    week.percent = week.total > 0 ? Math.round((week.completed / week.total) * 100) : 0;
+    week.label = String(Number(week.start.slice(8)));
   }
 
   const stats: HabitStats = {
-    habitStartDate,
-    totalDaysSinceStart,
-    totalCompleted,
-    completionPercent,
-    currentStreak,
-    longestStreak,
-    last7CompletionPercent,
-    last30CompletionPercent,
+    effectiveRange,
+    isEmpty: false,
+    totalDays,
+    completedDays,
+    missedDays: totalDays - completedDays,
+    completionPercent: Math.round((completedDays / totalDays) * 100),
+    completedDates,
+    lastCompletedDate,
+    weekdayBreakdown: weekdayCounts,
+    weeklyBreakdown,
   };
 
   if (taskType === 'duration') {
-    const minutesLogged = habitLogs.map((log) => log.duration_minutes ?? 0);
-    const totalMinutes = minutesLogged.reduce((sum, minutes) => sum + minutes, 0);
+    const minutesInRange = habitLogs
+      .filter((log) => log.date >= effectiveRange.start && log.date <= effectiveRange.end)
+      .map((log) => log.duration_minutes ?? 0);
+    const totalMinutes = minutesInRange.reduce((sum, minutes) => sum + minutes, 0);
     stats.totalMinutes = totalMinutes;
-    stats.avgMinutesPerDay = Math.round(totalMinutes / totalDaysSinceStart);
-    stats.bestDayMinutes = minutesLogged.length > 0 ? Math.max(...minutesLogged) : 0;
+    stats.avgMinutesPerDay = Math.round(totalMinutes / totalDays);
+    stats.bestDayMinutes = minutesInRange.length > 0 ? Math.max(...minutesInRange) : 0;
   }
 
   return stats;
-}
-
-function maxDateString(a: string, b: string): string {
-  return a > b ? a : b;
 }

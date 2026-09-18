@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { getFriendlyDateLabel } from '../../utils/date';
+import BrandHeader from '../../components/BrandHeader';
 import TodayTab from './tabs/TodayTab';
 import HistoryTab from './tabs/HistoryTab';
 
@@ -19,6 +20,8 @@ export default function StudentScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <BrandHeader />
+
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Hi, {profile?.first_name}!</Text>

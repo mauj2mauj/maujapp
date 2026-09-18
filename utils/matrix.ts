@@ -30,10 +30,15 @@ export function getRelevantTasks(activeTasks: Task[], logs: LogWithTask[]): Task
   }
   for (const log of logs) {
     if (!byId.has(log.task_id)) {
-      // The embedded `task` on a log only carries id/title/type (see
+      // The embedded `task` on a log only carries id/title/type/color (see
       // LogWithTask), which is all the matrix needs to render a row for a
-      // task that's no longer active.
-      byId.set(log.task_id, { ...log.task, is_active: false, created_at: log.created_at });
+      // task that's no longer active. Removed habits sort last.
+      byId.set(log.task_id, {
+        ...log.task,
+        is_active: false,
+        sort_order: Number.MAX_SAFE_INTEGER,
+        created_at: log.created_at,
+      });
     }
   }
   return Array.from(byId.values());

@@ -1,7 +1,7 @@
 import type { DailyLog, Task } from '../types/database';
 
 export interface LogWithTask extends DailyLog {
-  task: Pick<Task, 'id' | 'title' | 'type'>;
+  task: Pick<Task, 'id' | 'title' | 'type' | 'color'>;
 }
 
 export interface DateGroup {

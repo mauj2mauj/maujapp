@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../../../contexts/AuthContext';
 import { supabase } from '../../../lib/supabase';
-import { computeCompletionStats, type LogWithTask } from '../../../utils/stats';
+import { type LogWithTask } from '../../../utils/stats';
 import { getRelevantTasks } from '../../../utils/matrix';
 import type { Task } from '../../../types/database';
+import { todayHabitProgress } from '../../../utils/studentMotivation';
 import HabitMatrix from '../../../components/HabitMatrix';
 
 export default function HistoryTab() {
@@ -23,8 +24,16 @@ export default function HistoryTab() {
       // RLS already scopes this to student_id = auth.uid(), so there's no
       // need to add an .eq('student_id', ...) filter — a student physically
       // cannot fetch anyone else's rows here even if they tried.
-      supabase.from('daily_logs').select('*, task:tasks(id, title, type)').order('date', { ascending: false }),
-      supabase.from('tasks').select('*').eq('is_active', true),
+      supabase
+        .from('daily_logs')
+        .select('*, task:tasks(id, title, type, color)')
+        .order('date', { ascending: false }),
+      supabase
+        .from('tasks')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true }),
     ]);
 
     if (logsResult.error) {
@@ -49,8 +58,13 @@ export default function HistoryTab() {
     );
   }
 
-  const stats = computeCompletionStats(logs);
   const relevantTasks = getRelevantTasks(activeTasks, logs);
+  const todayProgress = profile
+    ? todayHabitProgress(activeTasks, logs, profile.created_at)
+    : { done: 0, total: 0 };
+  const remaining = Math.max(todayProgress.total - todayProgress.done, 0);
+  const todayPercent =
+    todayProgress.total > 0 ? Math.round((todayProgress.done / todayProgress.total) * 100) : 0;
 
   return (
     <ScrollView
@@ -68,19 +82,26 @@ export default function HistoryTab() {
     >
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <View style={styles.statsRow}>
-        <View style={styles.statBox}>
-          <Text style={styles.statValue}>{stats.completionPercent}%</Text>
-          <Text style={styles.statLabel}>Completion</Text>
+      <View style={styles.todayCard}>
+        <Text style={styles.todayLabel}>Today</Text>
+        <Text style={styles.todayValue}>
+          {todayProgress.done} of {todayProgress.total} habits done
+        </Text>
+        <View style={styles.progressTrack}>
+          <View
+            style={[
+              styles.progressFill,
+              { width: `${todayPercent}%` },
+            ]}
+          />
         </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statValue}>{stats.daysActive}</Text>
-          <Text style={styles.statLabel}>Days Active</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statValue}>{stats.currentStreak}</Text>
-          <Text style={styles.statLabel}>Day Streak</Text>
-        </View>
+        <Text style={styles.todayHint}>
+          {todayProgress.total === 0
+            ? 'No habits assigned yet.'
+            : remaining === 0
+              ? 'All habits done — ਵਧਾਈਆਂ!'
+              : `${remaining} left. Finish them to complete today’s Mauj.`}
+        </Text>
       </View>
 
       {relevantTasks.length === 0 ? (
@@ -99,17 +120,23 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   error: { color: '#dc2626', textAlign: 'center', marginBottom: 8 },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-  statBox: {
-    flex: 1,
-    alignItems: 'center',
+  todayCard: {
     borderWidth: 1,
     borderColor: '#eee',
     borderRadius: 12,
-    paddingVertical: 12,
-    marginHorizontal: 4,
+    padding: 16,
+    marginBottom: 20,
   },
-  statValue: { fontSize: 20, fontWeight: '700', color: '#4f46e5' },
-  statLabel: { fontSize: 12, color: '#666', marginTop: 2 },
+  todayLabel: { fontSize: 12, fontWeight: '700', color: '#888', letterSpacing: 1 },
+  todayValue: { fontSize: 22, fontWeight: '800', color: '#4f46e5', marginTop: 6 },
+  progressTrack: {
+    height: 8,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 4,
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  progressFill: { height: 8, backgroundColor: '#4f46e5', borderRadius: 4 },
+  todayHint: { fontSize: 13, color: '#666', marginTop: 10, lineHeight: 18 },
   emptyText: { textAlign: 'center', color: '#999', marginTop: 24 },
 });

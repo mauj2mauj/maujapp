@@ -8,9 +8,11 @@ import {
   TextInput,
   TouchableOpacity,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../../contexts/AuthContext';
 import type { AuthStackParamList } from '../../navigation/RootNavigator';
+import BrandHeader from '../../components/BrandHeader';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignIn'>;
 
@@ -36,12 +38,13 @@ export default function SignInScreen({ navigation }: Props) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <Text style={styles.title}>Mauj</Text>
-      <Text style={styles.subtitle}>Sign in to continue</Text>
+    <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <BrandHeader />
+        <Text style={styles.subtitle}>Sign in to continue</Text>
 
       <TextInput
         style={styles.input}
@@ -49,6 +52,8 @@ export default function SignInScreen({ navigation }: Props) {
         placeholderTextColor="#999"
         autoCapitalize="none"
         keyboardType="email-address"
+        autoComplete="email"
+        textContentType="emailAddress"
         value={email}
         onChangeText={setEmail}
       />
@@ -57,6 +62,8 @@ export default function SignInScreen({ navigation }: Props) {
         placeholder="Password"
         placeholderTextColor="#999"
         secureTextEntry
+        autoComplete="current-password"
+        textContentType="password"
         value={password}
         onChangeText={setPassword}
       />
@@ -75,13 +82,14 @@ export default function SignInScreen({ navigation }: Props) {
         <Text style={styles.link}>Don&apos;t have an account? Sign Up</Text>
       </TouchableOpacity>
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#fff' },
   container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
-  title: { fontSize: 32, fontWeight: '700', textAlign: 'center', marginBottom: 4 },
-  subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 32 },
+  subtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 32, marginTop: 8 },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',

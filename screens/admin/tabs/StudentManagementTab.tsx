@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -30,6 +33,13 @@ export default function StudentManagementTab({ navigation }: Props) {
   const [inviteSummary, setInviteSummary] = useState<string | null>(null);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Invitation | null>(null);
+  const [editEmail, setEditEmail] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Invitation | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = useCallback(async () => {
     const [invitationsResult, studentsResult] = await Promise.all([
@@ -133,7 +143,74 @@ export default function StudentManagementTab({ navigation }: Props) {
     loadData();
   };
 
-  const getStudentProfile = (inviteEmail: string) => students.find((s) => s.email === inviteEmail);
+  // Compared case-insensitively: the invite list lowercases what you type,
+  // but a profile's email is whatever the student signed up with.
+  const getStudentProfile = (inviteEmail: string) =>
+    students.find((s) => s.email.toLowerCase() === inviteEmail.toLowerCase());
+
+  const openEdit = (invitation: Invitation) => {
+    setActionError(null);
+    setEditError(null);
+    setEditEmail(invitation.email);
+    setEditing(invitation);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing) return;
+    setEditError(null);
+
+    const nextEmail = editEmail.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(nextEmail)) {
+      setEditError('That email doesn\u2019t look valid.');
+      return;
+    }
+    if (nextEmail === editing.email) {
+      setEditing(null);
+      return;
+    }
+
+    setEditSaving(true);
+    const { error } = await supabase
+      .from('invitations')
+      .update({ email: nextEmail })
+      .eq('id', editing.id);
+    setEditSaving(false);
+
+    if (error) {
+      // 23505 is Postgres' unique_violation — invitations.email is unique.
+      setEditError(
+        error.code === '23505' ? 'That email has already been invited.' : error.message
+      );
+      return;
+    }
+
+    setEditing(null);
+    loadData();
+  };
+
+  // A registered student needs the server-side function: their login lives
+  // in auth.users, which the client has no access to. Deleting it cascades
+  // through profiles and daily_logs, and clears the invitation too. A
+  // pending invite is just a row, so we delete it directly.
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete) return;
+    const studentProfile = getStudentProfile(pendingDelete.email);
+
+    setActionError(null);
+    setDeleting(true);
+    const { error } = studentProfile
+      ? await supabase.rpc('admin_delete_student', { target_student_id: studentProfile.id })
+      : await supabase.from('invitations').delete().eq('id', pendingDelete.id);
+    setDeleting(false);
+
+    if (error) {
+      setActionError(error.message);
+      return;
+    }
+
+    setPendingDelete(null);
+    loadData();
+  };
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredInvitations = invitations.filter((item) => {
@@ -181,6 +258,7 @@ export default function StudentManagementTab({ navigation }: Props) {
         </TouchableOpacity>
       </View>
       {inviteError ? <Text style={styles.error}>{inviteError}</Text> : null}
+      {actionError ? <Text style={styles.error}>{actionError}</Text> : null}
       {inviteSummary ? <Text style={styles.summary}>{inviteSummary}</Text> : null}
 
       <TextInput
@@ -230,21 +308,140 @@ export default function StudentManagementTab({ navigation }: Props) {
               <View style={styles.rowInfo}>
                 <Text style={styles.rowEmail}>{item.email}</Text>
                 {name ? <Text style={styles.rowName}>{name}</Text> : null}
+                {studentProfile?.phone ? (
+                  <Text style={styles.rowMeta}>{studentProfile.phone}</Text>
+                ) : null}
+                {studentProfile?.referral_source ? (
+                  <Text style={styles.rowMeta}>via {studentProfile.referral_source}</Text>
+                ) : null}
               </View>
-              <View
-                style={[
-                  styles.badge,
-                  item.status === 'registered' ? styles.badgeRegistered : styles.badgePending,
-                ]}
-              >
-                <Text style={styles.badgeText}>
-                  {item.status === 'registered' ? 'Registered' : 'Pending'}
-                </Text>
+              <View style={styles.rowRight}>
+                <View
+                  style={[
+                    styles.badge,
+                    item.status === 'registered' ? styles.badgeRegistered : styles.badgePending,
+                  ]}
+                >
+                  <Text style={styles.badgeText}>
+                    {item.status === 'registered' ? 'Registered' : 'Pending'}
+                  </Text>
+                </View>
+                <View style={styles.rowActions}>
+                  {/* Once someone has registered, the email is their login
+                      credential in auth.users — editing only the invitation
+                      row here would silently desync the two. */}
+                  {studentProfile ? null : (
+                    <TouchableOpacity onPress={() => openEdit(item)} hitSlop={8}>
+                      <Text style={styles.editAction}>Edit</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    onPress={() => {
+                      setActionError(null);
+                      setPendingDelete(item);
+                    }}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.deleteAction}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </TouchableOpacity>
           );
         }}
       />
+
+      {/* A real modal instead of Alert.alert: react-native-web stubs Alert
+          out to a no-op, so on web the confirm never appeared and nothing
+          was ever deleted. */}
+      <Modal
+        visible={pendingDelete !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingDelete(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            {pendingDelete ? (
+              <>
+                <Text style={styles.modalTitle}>
+                  {getStudentProfile(pendingDelete.email) ? 'Remove student?' : 'Delete invitation?'}
+                </Text>
+                <Text style={styles.modalBody}>
+                  {getStudentProfile(pendingDelete.email)
+                    ? `${pendingDelete.email} has already registered. This deletes their account and all of their habit history. This cannot be undone.`
+                    : `${pendingDelete.email} will no longer be able to register.`}
+                </Text>
+              </>
+            ) : null}
+            {actionError ? <Text style={styles.error}>{actionError}</Text> : null}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => setPendingDelete(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalDelete]}
+                onPress={handleConfirmDelete}
+                disabled={deleting}
+              >
+                {deleting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalSaveText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={editing !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditing(null)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Edit invitation</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="student@example.com"
+              placeholderTextColor="#999"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={editEmail}
+              onChangeText={setEditEmail}
+            />
+            {editError ? <Text style={styles.error}>{editError}</Text> : null}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => setEditing(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalSave]}
+                onPress={handleSaveEdit}
+                disabled={editSaving}
+              >
+                {editSaving ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalSaveText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -291,11 +488,48 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  rowInfo: { flex: 1 },
+  rowInfo: { flex: 1, marginRight: 12 },
   rowEmail: { fontSize: 15, fontWeight: '600' },
   rowName: { fontSize: 13, color: '#666', marginTop: 2 },
+  rowMeta: { fontSize: 12, color: '#999', marginTop: 2 },
+  rowRight: { alignItems: 'flex-end' },
+  rowActions: { flexDirection: 'row', marginTop: 8 },
+  editAction: { fontSize: 13, fontWeight: '600', color: '#4f46e5', marginRight: 16 },
+  deleteAction: { fontSize: 13, fontWeight: '600', color: '#dc2626' },
   badge: { borderRadius: 12, paddingVertical: 4, paddingHorizontal: 10 },
   badgePending: { backgroundColor: '#fef3c7' },
   badgeRegistered: { backgroundColor: '#d1fae5' },
   badgeText: { fontSize: 12, fontWeight: '600', color: '#333' },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: { backgroundColor: '#fff', borderRadius: 12, padding: 20 },
+  modalTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  modalBody: { fontSize: 14, color: '#444', lineHeight: 20, marginBottom: 12 },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    marginBottom: 8,
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4 },
+  modalButton: {
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    marginLeft: 8,
+    minWidth: 88,
+    alignItems: 'center',
+  },
+  modalCancel: { backgroundColor: '#f3f4f6' },
+  modalCancelText: { color: '#444', fontWeight: '600' },
+  modalSave: { backgroundColor: '#4f46e5' },
+  modalDelete: { backgroundColor: '#dc2626' },
+  modalSaveText: { color: '#fff', fontWeight: '600' },
 });
