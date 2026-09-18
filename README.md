@@ -51,10 +51,16 @@ This repo is a personal copy of the original MAUJ project, with extra product fe
 
 This copy is linked to the **mauj** Expo account (not the original owner’s EAS project).
 
+`.env` is not in git. After cloning, copy `.env.example` to `.env` and fill in your keys, then also set them on EAS so the APK does not crash on launch:
+
 ```powershell
 eas login
+eas env:set preview --name EXPO_PUBLIC_SUPABASE_URL --value "https://your-project.supabase.co" --visibility plaintext --non-interactive
+eas env:set preview --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "your-anon-key" --visibility plaintext --non-interactive
 eas build -p android --profile preview
 ```
+
+Uninstall any older MAUJ APK before installing a new one, or Android may keep the old icon.
 
 Download the APK from the EAS build page and share it. Recipients may need to allow “Install unknown apps.”
 
