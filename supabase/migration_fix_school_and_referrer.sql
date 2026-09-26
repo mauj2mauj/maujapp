@@ -1,5 +1,16 @@
--- Run this once in the Supabase SQL Editor after migration_2026_09_26.sql.
--- Adds the admin-managed "Referred by" list. Safe to re-run.
+-- Run this once in the Supabase SQL Editor. Safe to re-run.
+-- Creates schools, the referred-by list, and the profile columns the app
+-- saves, then teaches signup to store them. Reloads the API schema cache
+-- so "could not find the table" goes away without a dashboard restart.
+
+create table if not exists public.schools (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists schools_name_lower_idx
+  on public.schools (lower(btrim(name)));
 
 create table if not exists public.referrers (
   id uuid primary key default gen_random_uuid(),
@@ -11,14 +22,47 @@ create unique index if not exists referrers_name_lower_idx
   on public.referrers (lower(btrim(name)));
 
 alter table public.profiles
-  add column if not exists referrer_id uuid references public.referrers (id) on delete set null;
+  add column if not exists school_id uuid references public.schools (id) on delete set null;
 
 alter table public.profiles
   add column if not exists other_school text;
 
+alter table public.profiles
+  add column if not exists referrer_id uuid references public.referrers (id) on delete set null;
+
+alter table public.tasks
+  add column if not exists description text;
+
+create index if not exists profiles_school_id_idx on public.profiles (school_id);
 create index if not exists profiles_referrer_id_idx on public.profiles (referrer_id);
 
+alter table public.schools enable row level security;
 alter table public.referrers enable row level security;
+
+drop policy if exists "Anyone can view schools" on public.schools;
+create policy "Anyone can view schools"
+on public.schools for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "Admins can create schools" on public.schools;
+create policy "Admins can create schools"
+on public.schools for insert
+to authenticated
+with check (public.is_admin());
+
+drop policy if exists "Admins can update schools" on public.schools;
+create policy "Admins can update schools"
+on public.schools for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+drop policy if exists "Admins can delete schools" on public.schools;
+create policy "Admins can delete schools"
+on public.schools for delete
+to authenticated
+using (public.is_admin());
 
 drop policy if exists "Anyone can view referrers" on public.referrers;
 create policy "Anyone can view referrers"
@@ -45,6 +89,8 @@ on public.referrers for delete
 to authenticated
 using (public.is_admin());
 
+grant select on public.schools to anon, authenticated;
+grant insert, update, delete on public.schools to authenticated;
 grant select on public.referrers to anon, authenticated;
 grant insert, update, delete on public.referrers to authenticated;
 
@@ -52,9 +98,13 @@ do $$
 begin
   if not exists (
     select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime'
-      and schemaname = 'public'
-      and tablename = 'referrers'
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'schools'
+  ) then
+    alter publication supabase_realtime add table public.schools;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'referrers'
   ) then
     alter publication supabase_realtime add table public.referrers;
   end if;
@@ -154,3 +204,5 @@ begin
   return new;
 end;
 $$;
+
+notify pgrst, 'reload schema';
