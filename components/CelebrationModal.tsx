@@ -41,11 +41,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   punjabi: {
-    fontSize: 24,
+    alignSelf: 'stretch',
+    fontSize: 22,
     fontWeight: '400',
     color: '#dc2626',
     textAlign: 'center',
-    lineHeight: 40,
+    lineHeight: 36,
+    paddingTop: 4,
   },
   english: {
     fontSize: 14,

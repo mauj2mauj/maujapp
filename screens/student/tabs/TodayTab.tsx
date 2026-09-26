@@ -302,7 +302,7 @@ export default function TodayTab() {
         punjabi={
           celebration === 'week'
             ? 'ਵਧਾਈਆਂ — ਤੁਸੀਂ ਪੂਰਾ ਹਫਤਾ ਮੌਜ ਕੀਤੀ'
-            : 'ਵਧਾਈਆਂ — ਅੱਜ ਮੌਜ ਕਰਨ ਲਈ'
+            : 'ਵਧਾਈਆਂਂ - ਅੱਜ ਮੌਜ ਕਰਨ ਲਈ'
         }
         english={
           celebration === 'week'
