@@ -12,6 +12,8 @@ export default function BrandHeader() {
         <Text style={styles.english}>MAUJ</Text>
       </View>
       <Text style={styles.tagline}>My Att Uttam Journey</Text>
+      <Text style={styles.habitsLine}>8 Atomic Habits</Text>
+      <Text style={styles.habitsSubline}>Just 30 mins per day</Text>
     </View>
   );
 }
@@ -19,7 +21,7 @@ export default function BrandHeader() {
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-    paddingTop: 12,
+    paddingTop: 8,
     paddingBottom: 14,
     paddingHorizontal: 16,
     backgroundColor: '#fff',
@@ -28,30 +30,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingTop: 10,
   },
   punjabi: {
     fontSize: 42,
-    fontWeight: '800',
+    fontWeight: '400',
     color: '#4f46e5',
-    lineHeight: 50,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
+    lineHeight: 64,
+    paddingTop: 4,
   },
   separator: {
     fontSize: 28,
     fontWeight: '700',
     color: '#4f46e5',
-    lineHeight: 50,
-    includeFontPadding: false,
+    lineHeight: 64,
   },
   english: {
     fontSize: 30,
     fontWeight: '800',
     color: '#4f46e5',
     letterSpacing: 1,
-    lineHeight: 50,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
+    lineHeight: 64,
   },
   tagline: {
     fontSize: 11,
@@ -59,7 +58,21 @@ const styles = StyleSheet.create({
     color: '#dc2626',
     letterSpacing: 2,
     textTransform: 'uppercase',
-    marginTop: 4,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  habitsLine: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  habitsSubline: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#444',
+    marginTop: 2,
     textAlign: 'center',
   },
 });

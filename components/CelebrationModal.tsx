@@ -18,7 +18,7 @@ export default function CelebrationModal({ visible, punjabi, english, onClose }:
           <Text style={styles.punjabi}>{punjabi}</Text>
           <Text style={styles.english}>{english}</Text>
           <TouchableOpacity style={styles.button} onPress={onClose}>
-            <Text style={styles.buttonText}>ਸ਼ੁਕਰੀਆ</Text>
+            <Text style={styles.buttonText}>ਧੰਨਵਾਦ</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -42,10 +42,10 @@ const styles = StyleSheet.create({
   },
   punjabi: {
     fontSize: 24,
-    fontWeight: '800',
+    fontWeight: '400',
     color: '#dc2626',
     textAlign: 'center',
-    lineHeight: 36,
+    lineHeight: 40,
   },
   english: {
     fontSize: 14,
@@ -61,5 +61,5 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 28,
   },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  buttonText: { color: '#fff', fontWeight: '400', fontSize: 18, lineHeight: 28 },
 });

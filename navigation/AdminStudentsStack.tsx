@@ -4,6 +4,7 @@ import StudentManagementTab from '../screens/admin/tabs/StudentManagementTab';
 import StudentDetailScreen from '../screens/admin/tabs/StudentDetailScreen';
 import HabitDetailScreen from '../screens/admin/tabs/HabitDetailScreen';
 import type { TaskType } from '../types/database';
+import { titleWeight } from '../utils/gurmukhiText';
 
 export type AdminStudentsStackParamList = {
   StudentList: undefined;
@@ -36,12 +37,20 @@ export default function AdminStudentsStack() {
       <Stack.Screen
         name="StudentDetail"
         component={StudentDetailScreen}
-        options={({ route }) => ({ headerShown: true, title: route.params.studentName })}
+        options={({ route }) => ({
+          headerShown: true,
+          title: route.params.studentName,
+          headerTitleStyle: { fontWeight: titleWeight(route.params.studentName, '600') },
+        })}
       />
       <Stack.Screen
         name="HabitDetail"
         component={HabitDetailScreen}
-        options={({ route }) => ({ headerShown: true, title: route.params.taskTitle })}
+        options={({ route }) => ({
+          headerShown: true,
+          title: route.params.taskTitle,
+          headerTitleStyle: { fontWeight: titleWeight(route.params.taskTitle, '600') },
+        })}
       />
     </Stack.Navigator>
   );

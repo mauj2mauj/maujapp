@@ -5,6 +5,7 @@ import type { LogWithTask } from '../utils/stats';
 import { buildDateRange, getCellState } from '../utils/matrix';
 import { getLocalDateString } from '../utils/date';
 import { rangeIsEmpty, type DateRange } from '../utils/dateRange';
+import { titleWeight } from '../utils/gurmukhiText';
 
 interface Props {
   tasks: Task[];
@@ -22,8 +23,8 @@ interface Props {
 
 const CELL_SIZE = 36;
 const CELL_GAP = 6;
-const ROW_HEIGHT = CELL_SIZE + CELL_GAP;
-const LABEL_WIDTH = 120;
+const ROW_HEIGHT = 52;
+const LABEL_WIDTH = 168;
 const HEADER_HEIGHT = 28;
 const HEADER_MARGIN_BOTTOM = 6;
 
@@ -71,7 +72,13 @@ export default function HabitMatrix({ tasks, logs, onPressTask, range }: Props) 
           <View style={styles.headerSpacer} />
           {tasks.map((task) => {
             const label = (
-              <Text style={[styles.labelText, { color: task.color }]} numberOfLines={1}>
+              <Text
+                style={[
+                  styles.labelText,
+                  { color: task.color, fontWeight: titleWeight(task.title) },
+                ]}
+                numberOfLines={2}
+              >
                 {task.title}
               </Text>
             );
@@ -163,7 +170,7 @@ const styles = StyleSheet.create({
   },
   headerWeekday: { fontSize: 10, color: '#999' },
   headerDay: { fontSize: 12, fontWeight: '600', color: '#666' },
-  dataRow: { flexDirection: 'row', height: ROW_HEIGHT },
+  dataRow: { flexDirection: 'row', height: ROW_HEIGHT, alignItems: 'center' },
   cell: {
     width: CELL_SIZE,
     height: CELL_SIZE,

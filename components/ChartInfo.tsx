@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { titleWeight } from '../utils/gurmukhiText';
 
 interface Props {
   // Shown when nothing has been tapped yet.
@@ -23,7 +24,9 @@ export default function ChartInfo({ placeholder, title, lines, accentColor = '#4
 
   return (
     <View style={[styles.container, { borderColor: accentColor }]}>
-      <Text style={[styles.title, { color: accentColor }]}>{title}</Text>
+      <Text style={[styles.title, { color: accentColor, fontWeight: titleWeight(title, '700') }]}>
+        {title}
+      </Text>
       {(lines ?? []).map((line) => (
         <Text key={line} style={styles.line}>
           {line}

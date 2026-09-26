@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Linking } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
+import { isPasswordResetUrl, readRecoveryParams } from '../lib/passwordReset';
 import { supabase } from '../lib/supabase';
 import type { Profile } from '../types/database';
 
@@ -9,6 +11,9 @@ interface SignUpParams {
   firstName: string;
   lastName: string;
   phone: string;
+  schoolId: string | null;
+  otherSchool: string;
+  referrerId: string | null;
   referralSource: string;
 }
 
@@ -17,6 +22,8 @@ interface AuthContextValue {
   profile: Profile | null;
   loading: boolean;
   profileError: string | null;
+  passwordRecovery: boolean;
+  clearPasswordRecovery: () => void;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (params: SignUpParams) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -31,6 +38,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Starts true: on app launch we don't yet know if a session exists in
   // AsyncStorage, so we show a spinner until getSession() resolves.
   const [loading, setLoading] = useState(true);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const consumeUrl = async (url: string | null) => {
+      if (!isPasswordResetUrl(url) || !url) return;
+      setPasswordRecovery(true);
+      const { accessToken, refreshToken, code } = readRecoveryParams(url);
+      const { error } = code
+        ? await supabase.auth.exchangeCodeForSession(code)
+        : accessToken && refreshToken
+          ? await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+          : { error: new Error('This reset link is missing a session.') };
+      if (!cancelled && error) setPasswordRecovery(false);
+    };
+
+    Linking.getInitialURL().then((url) => {
+      if (!cancelled) consumeUrl(url);
+    });
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      consumeUrl(url);
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -92,6 +128,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     firstName,
     lastName,
     phone,
+    schoolId,
+    otherSchool,
+    referrerId,
     referralSource,
   }) => {
     // The `data` object here becomes `raw_user_meta_data` on the new
@@ -107,6 +146,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           first_name: firstName,
           last_name: lastName,
           phone,
+          school_id: schoolId,
+          other_school: otherSchool,
+          referrer_id: referrerId,
           referral_source: referralSource,
         },
       },
@@ -120,7 +162,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ session, profile, loading, profileError, signIn, signUp, signOut }}
+      value={{
+        session,
+        profile,
+        loading,
+        profileError,
+        passwordRecovery,
+        clearPasswordRecovery: () => setPasswordRecovery(false),
+        signIn,
+        signUp,
+        signOut,
+      }}
     >
       {children}
     </AuthContext.Provider>

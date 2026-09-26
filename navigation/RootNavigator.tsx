@@ -3,6 +3,8 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import ResetPasswordScreen from '../screens/auth/ResetPasswordScreen';
 import SignInScreen from '../screens/auth/SignInScreen';
 import SignUpScreen from '../screens/auth/SignUpScreen';
 import StudentScreen from '../screens/student/StudentScreen';
@@ -11,6 +13,7 @@ import AdminScreen from '../screens/admin/AdminScreen';
 export type AuthStackParamList = {
   SignIn: undefined;
   SignUp: undefined;
+  ForgotPassword: undefined;
 };
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -20,12 +23,17 @@ function AuthNavigator() {
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
       <AuthStack.Screen name="SignIn" component={SignInScreen} />
       <AuthStack.Screen name="SignUp" component={SignUpScreen} />
+      <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
     </AuthStack.Navigator>
   );
 }
 
 export default function RootNavigator() {
-  const { session, profile, loading, profileError, signOut } = useAuth();
+  const { session, profile, loading, profileError, passwordRecovery, signOut } = useAuth();
+
+  if (passwordRecovery) {
+    return <ResetPasswordScreen />;
+  }
 
   if (loading) {
     return (

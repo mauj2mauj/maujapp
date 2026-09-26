@@ -13,6 +13,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../../contexts/AuthContext';
 import type { AuthStackParamList } from '../../navigation/RootNavigator';
 import BrandHeader from '../../components/BrandHeader';
+import PasswordField from '../../components/PasswordField';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignIn'>;
 
@@ -57,13 +58,9 @@ export default function SignInScreen({ navigation }: Props) {
         value={email}
         onChangeText={setEmail}
       />
-      <TextInput
+      <PasswordField
         style={styles.input}
         placeholder="Password"
-        placeholderTextColor="#999"
-        secureTextEntry
-        autoComplete="current-password"
-        textContentType="password"
         value={password}
         onChangeText={setPassword}
       />
@@ -76,6 +73,10 @@ export default function SignInScreen({ navigation }: Props) {
         ) : (
           <Text style={styles.buttonText}>Sign In</Text>
         )}
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+        <Text style={styles.link}>Forgot password?</Text>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
@@ -97,6 +98,7 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 12,
     fontSize: 16,
+    color: '#111',
   },
   button: {
     backgroundColor: '#4f46e5',

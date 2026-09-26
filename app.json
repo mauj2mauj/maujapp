@@ -3,6 +3,7 @@
     "name": "mauj",
     "slug": "mauj",
     "version": "1.0.0",
+    "scheme": "mauj",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

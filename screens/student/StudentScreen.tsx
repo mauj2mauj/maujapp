@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { getFriendlyDateLabel } from '../../utils/date';
+import { titleWeight } from '../../utils/gurmukhiText';
 import BrandHeader from '../../components/BrandHeader';
 import TodayTab from './tabs/TodayTab';
 import HistoryTab from './tabs/HistoryTab';
@@ -24,7 +25,12 @@ export default function StudentScreen() {
 
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Hi, {profile?.first_name}!</Text>
+          <Text
+            style={[
+              styles.headerTitle,
+              { fontWeight: titleWeight(profile?.first_name ?? '', '700') },
+            ]}
+          >Hi, {profile?.first_name}!</Text>
           <Text style={styles.headerSubtitle}>
             {activeTab === 'today' ? getFriendlyDateLabel() : 'Your progress so far'}
           </Text>

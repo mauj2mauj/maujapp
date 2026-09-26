@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { supabase } from '../../../lib/supabase';
 import { DEFAULT_HABIT_COLOR, HABIT_COLORS, type Task, type TaskType } from '../../../types/database';
+import { titleWeight } from '../../../utils/gurmukhiText';
 
 const DEFAULT_NEW_HABIT_COLOR =
   HABIT_COLORS.find((option) => option.label === 'Secondary')?.value ?? DEFAULT_HABIT_COLOR;
@@ -48,6 +49,7 @@ export default function HabitManagementTab() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [type, setType] = useState<TaskType>('boolean');
   // Defaults to "Secondary" so a new habit isn't accidentally marked crucial.
   const [color, setColor] = useState(DEFAULT_NEW_HABIT_COLOR);
@@ -56,6 +58,7 @@ export default function HabitManagementTab() {
 
   const [editing, setEditing] = useState<Task | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
   const [editType, setEditType] = useState<TaskType>('boolean');
   const [editColor, setEditColor] = useState(DEFAULT_HABIT_COLOR);
   const [editError, setEditError] = useState<string | null>(null);
@@ -88,6 +91,7 @@ export default function HabitManagementTab() {
     setSubmitting(true);
     const { error: insertError } = await supabase.from('tasks').insert({
       title: trimmed,
+      description: description.trim() || null,
       type,
       color,
       // New habits land at the bottom of the list.
@@ -100,6 +104,7 @@ export default function HabitManagementTab() {
       return;
     }
     setTitle('');
+    setDescription('');
     loadTasks();
   };
 
@@ -156,6 +161,7 @@ export default function HabitManagementTab() {
     setError(null);
     setEditError(null);
     setEditTitle(task.title);
+    setEditDescription(task.description ?? '');
     setEditType(task.type);
     setEditColor(task.color);
     setEditing(task);
@@ -174,7 +180,12 @@ export default function HabitManagementTab() {
     setEditSaving(true);
     const { error: updateError } = await supabase
       .from('tasks')
-      .update({ title: trimmed, type: editType, color: editColor })
+      .update({
+        title: trimmed,
+        description: editDescription.trim() || null,
+        type: editType,
+        color: editColor,
+      })
       .eq('id', editing.id);
     setEditSaving(false);
 
@@ -222,6 +233,14 @@ export default function HabitManagementTab() {
           value={title}
           onChangeText={setTitle}
         />
+        <TextInput
+          style={[styles.input, styles.descriptionInput]}
+          placeholder="Description (optional)"
+          placeholderTextColor="#999"
+          value={description}
+          onChangeText={setDescription}
+          multiline
+        />
         <View style={styles.typeToggle}>
           <TouchableOpacity
             style={[styles.typeButton, type === 'boolean' && styles.typeButtonActive]}
@@ -263,13 +282,15 @@ export default function HabitManagementTab() {
                 <Text
                   style={[
                     styles.rowTitle,
-                    { color: item.color },
-                    // A removed habit reads as greyed-out rather than coloured.
+                    { color: item.color, fontWeight: titleWeight(item.title) },
                     !item.is_active && styles.rowTitleInactive,
                   ]}
                 >
                   {item.title}
                 </Text>
+                {item.description ? (
+                  <Text style={styles.rowDescription}>{item.description}</Text>
+                ) : null}
                 <Text style={styles.rowMeta}>
                   {item.type === 'boolean' ? 'Yes / No' : 'Duration'}
                   {item.is_active ? '' : ' · hidden from students'}
@@ -332,6 +353,14 @@ export default function HabitManagementTab() {
               placeholderTextColor="#999"
               value={editTitle}
               onChangeText={setEditTitle}
+            />
+            <TextInput
+              style={[styles.input, styles.descriptionInput]}
+              placeholder="Description (optional)"
+              placeholderTextColor="#999"
+              value={editDescription}
+              onChangeText={setEditDescription}
+              multiline
             />
             <View style={styles.typeToggle}>
               <TouchableOpacity
@@ -437,7 +466,9 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 15,
     marginBottom: 8,
+    color: '#111',
   },
+  descriptionInput: { minHeight: 72, textAlignVertical: 'top' },
   typeToggle: {
     flexDirection: 'row',
     marginBottom: 8,
@@ -476,6 +507,7 @@ const styles = StyleSheet.create({
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowInfo: { flex: 1, marginRight: 12 },
   rowTitle: { fontSize: 15, fontWeight: '600' },
+  rowDescription: { fontSize: 13, color: '#666', marginTop: 4, lineHeight: 18 },
   rowTitleInactive: { color: '#999', textDecorationLine: 'line-through' },
   rowMeta: { fontSize: 13, color: '#666', marginTop: 2 },
   reorder: { flexDirection: 'row' },

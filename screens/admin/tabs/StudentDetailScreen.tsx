@@ -4,6 +4,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -11,7 +12,9 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BarChart } from 'react-native-gifted-charts';
 import { supabase } from '../../../lib/supabase';
 import type { AdminStudentsStackParamList } from '../../../navigation/AdminStudentsStack';
-import type { Profile, Task } from '../../../types/database';
+import type { Profile, Referrer, School, Task } from '../../../types/database';
+import { OTHER_REFERRER, OTHER_SCHOOL } from '../../../types/database';
+import { titleWeight } from '../../../utils/gurmukhiText';
 import type { LogWithTask } from '../../../utils/stats';
 import { getRelevantTasks } from '../../../utils/matrix';
 import { computeHabitStats, getHabitStartDate } from '../../../utils/habitStats';
@@ -29,6 +32,7 @@ import {
   type RangePresetKey,
 } from '../../../utils/dateRange';
 import HabitMatrix from '../../../components/HabitMatrix';
+import ChoiceSelect from '../../../components/ChoiceSelect';
 import DateRangeFilter from '../../../components/DateRangeFilter';
 import ChartInfo from '../../../components/ChartInfo';
 import DoneMissedPie from '../../../components/DoneMissedPie';
@@ -40,6 +44,14 @@ type Props = NativeStackScreenProps<AdminStudentsStackParamList, 'StudentDetail'
 export default function StudentDetailScreen({ route, navigation }: Props) {
   const { studentId } = route.params;
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [referrers, setReferrers] = useState<Referrer[]>([]);
+  const [draftSchoolId, setDraftSchoolId] = useState('');
+  const [draftOtherSchool, setDraftOtherSchool] = useState('');
+  const [draftReferrerId, setDraftReferrerId] = useState('');
+  const [draftOtherReferrer, setDraftOtherReferrer] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileNote, setProfileNote] = useState<string | null>(null);
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
   const [logs, setLogs] = useState<LogWithTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +66,7 @@ export default function StudentDetailScreen({ route, navigation }: Props) {
 
   const loadData = useCallback(async () => {
     setError(null);
-    const [profileResult, tasksResult, logsResult] = await Promise.all([
+    const [profileResult, tasksResult, logsResult, schoolsResult, referrersResult] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', studentId).single(),
       supabase
         .from('tasks')
@@ -70,6 +82,8 @@ export default function StudentDetailScreen({ route, navigation }: Props) {
         .select('*, task:tasks(id, title, type, color)')
         .eq('student_id', studentId)
         .order('date', { ascending: false }),
+      supabase.from('schools').select('*').order('name', { ascending: true }),
+      supabase.from('referrers').select('*').order('name', { ascending: true }),
     ]);
 
     if (profileResult.error) {
@@ -77,7 +91,34 @@ export default function StudentDetailScreen({ route, navigation }: Props) {
       setLoading(false);
       return;
     }
-    setProfile(profileResult.data as Profile);
+    const nextProfile = profileResult.data as Profile;
+    setProfile(nextProfile);
+    if (nextProfile.school_id) {
+      setDraftSchoolId(nextProfile.school_id);
+      setDraftOtherSchool('');
+    } else if (nextProfile.other_school) {
+      setDraftSchoolId(OTHER_SCHOOL);
+      setDraftOtherSchool(nextProfile.other_school);
+    } else {
+      setDraftSchoolId('');
+      setDraftOtherSchool('');
+    }
+    if (nextProfile.referrer_id) {
+      setDraftReferrerId(nextProfile.referrer_id);
+      setDraftOtherReferrer('');
+    } else if (nextProfile.referral_source) {
+      setDraftReferrerId(OTHER_REFERRER);
+      setDraftOtherReferrer(nextProfile.referral_source);
+    } else {
+      setDraftReferrerId('');
+      setDraftOtherReferrer('');
+    }
+    if (!schoolsResult.error && schoolsResult.data) {
+      setSchools(schoolsResult.data as School[]);
+    }
+    if (!referrersResult.error && referrersResult.data) {
+      setReferrers(referrersResult.data as Referrer[]);
+    }
     if (tasksResult.data) setActiveTasks(tasksResult.data as Task[]);
     if (logsResult.data) setLogs(logsResult.data as unknown as LogWithTask[]);
     setLoading(false);
@@ -86,6 +127,41 @@ export default function StudentDetailScreen({ route, navigation }: Props) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleSaveProfile = async () => {
+    if (!profile) return;
+    setProfileNote(null);
+    setSavingProfile(true);
+    const choseOtherSchool = draftSchoolId === OTHER_SCHOOL;
+    const choseOther = draftReferrerId === OTHER_REFERRER;
+    const listedName = referrers.find((person) => person.id === draftReferrerId)?.name ?? null;
+    const nextReferral = choseOther ? draftOtherReferrer.trim() || null : listedName;
+    const nextReferrerId = choseOther || !draftReferrerId ? null : draftReferrerId;
+    const nextSchoolId = choseOtherSchool || !draftSchoolId ? null : draftSchoolId;
+    const nextOtherSchool = choseOtherSchool ? draftOtherSchool.trim() || null : null;
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        school_id: nextSchoolId,
+        other_school: nextOtherSchool,
+        referrer_id: nextReferrerId,
+        referral_source: nextReferral,
+      })
+      .eq('id', profile.id);
+    setSavingProfile(false);
+    if (updateError) {
+      setProfileNote(updateError.message);
+      return;
+    }
+    setProfile({
+      ...profile,
+      school_id: nextSchoolId,
+      other_school: nextOtherSchool,
+      referrer_id: nextReferrerId,
+      referral_source: nextReferral,
+    });
+    setProfileNote('Saved.');
+  };
 
   if (loading) {
     return (
@@ -196,9 +272,54 @@ export default function StudentDetailScreen({ route, navigation }: Props) {
       </Text>
       <Text style={styles.email}>{profile.email}</Text>
       {profile.phone ? <Text style={styles.email}>{profile.phone}</Text> : null}
-      {profile.referral_source ? (
-        <Text style={styles.referral}>Heard about Mauj via {profile.referral_source}</Text>
+      <ChoiceSelect
+        label="School"
+        value={draftSchoolId}
+        placeholder="No school"
+        options={[
+          { value: '', label: 'No school' },
+          ...schools.map((school) => ({ value: school.id, label: school.name })),
+          { value: OTHER_SCHOOL, label: 'Others' },
+        ]}
+        onSelect={setDraftSchoolId}
+      />
+      {draftSchoolId === OTHER_SCHOOL ? (
+        <TextInput
+          style={styles.fieldInput}
+          placeholderTextColor="#999"
+          value={draftOtherSchool}
+          onChangeText={setDraftOtherSchool}
+        />
       ) : null}
+      <ChoiceSelect
+        label="Referred by"
+        value={draftReferrerId}
+        placeholder="Choose"
+        options={[
+          { value: '', label: 'None' },
+          ...referrers.map((person) => ({ value: person.id, label: person.name })),
+          { value: OTHER_REFERRER, label: 'Others' },
+        ]}
+        onSelect={setDraftReferrerId}
+      />
+      {draftReferrerId === OTHER_REFERRER ? (
+        <TextInput
+          style={styles.fieldInput}
+          placeholderTextColor="#999"
+          value={draftOtherReferrer}
+          onChangeText={setDraftOtherReferrer}
+        />
+      ) : null}
+      {profileNote ? (
+        <Text style={profileNote === 'Saved.' ? styles.savedNote : styles.error}>{profileNote}</Text>
+      ) : null}
+      <TouchableOpacity style={styles.saveProfile} onPress={handleSaveProfile} disabled={savingProfile}>
+        {savingProfile ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.saveProfileText}>Save school and referred by</Text>
+        )}
+      </TouchableOpacity>
       <Text style={styles.joined}>Joined {joinedDate}</Text>
 
       <DateRangeFilter
@@ -230,7 +351,12 @@ export default function StudentDetailScreen({ route, navigation }: Props) {
           const done = log?.completed ?? false;
           return (
             <View key={task.id} style={styles.todayRow}>
-              <Text style={[styles.todayTitle, { color: task.color }]}>{task.title}</Text>
+              <Text
+                style={[
+                  styles.todayTitle,
+                  { color: task.color, fontWeight: titleWeight(task.title, '400') },
+                ]}
+              >{task.title}</Text>
               <Text style={[styles.todayStatus, done && styles.todayStatusDone]}>
                 {task.type === 'boolean'
                   ? done
@@ -308,7 +434,12 @@ export default function StudentDetailScreen({ route, navigation }: Props) {
               style={[styles.comparisonRow, selectedHabitIndex === index && styles.comparisonRowSelected]}
               onPress={() => setSelectedHabitIndex(index)}
             >
-              <Text style={[styles.comparisonTitle, { color: task.color }]} numberOfLines={1}>
+              <Text
+                style={[
+                  styles.comparisonTitle,
+                  { color: task.color, fontWeight: titleWeight(task.title, '400') },
+                ]}
+              >
                 {index + 1}. {task.title}
               </Text>
               <Text style={styles.comparisonValue}>
@@ -353,6 +484,26 @@ const styles = StyleSheet.create({
   error: { color: '#dc2626', textAlign: 'center', padding: 16 },
   name: { fontSize: 20, fontWeight: '700' },
   email: { fontSize: 14, color: '#666', marginTop: 2 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#333', marginTop: 12, marginBottom: 6 },
+  fieldInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: '#111',
+    marginBottom: 8,
+  },
+  saveProfile: {
+    backgroundColor: '#4f46e5',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  saveProfileText: { color: '#fff', fontWeight: '600' },
+  savedNote: { color: '#059669', marginBottom: 8 },
   referral: { fontSize: 13, color: '#666', marginTop: 6, fontStyle: 'italic' },
   joined: { fontSize: 13, color: '#999', marginTop: 4, marginBottom: 16 },
   sectionTitle: { fontSize: 15, fontWeight: '700', marginBottom: 8, marginTop: 8 },
@@ -385,7 +536,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  todayTitle: { fontSize: 14, color: '#333' },
+  todayTitle: { fontSize: 14, color: '#333', flex: 1, marginRight: 12 },
   todayStatus: { fontSize: 13, color: '#999', fontWeight: '600' },
   todayStatusDone: { color: '#059669' },
 });

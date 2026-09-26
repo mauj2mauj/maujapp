@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -15,6 +15,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import type { AuthStackParamList } from '../../navigation/RootNavigator';
 import BrandHeader from '../../components/BrandHeader';
+import ChoiceSelect from '../../components/ChoiceSelect';
+import PasswordField from '../../components/PasswordField';
+import { OTHER_REFERRER, OTHER_SCHOOL, type Referrer, type School } from '../../types/database';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
 
@@ -28,7 +31,13 @@ export default function SignUpScreen({ navigation }: Props) {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [referralSource, setReferralSource] = useState('');
+  const [schoolId, setSchoolId] = useState('');
+  const [otherSchool, setOtherSchool] = useState('');
+  const [schools, setSchools] = useState<School[]>([]);
+  const [schoolsError, setSchoolsError] = useState<string | null>(null);
+  const [referrers, setReferrers] = useState<Referrer[]>([]);
+  const [referrerId, setReferrerId] = useState('');
+  const [otherReferrer, setOtherReferrer] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -36,6 +45,33 @@ export default function SignUpScreen({ navigation }: Props) {
   // Spaces, dashes and brackets are how people naturally type a number;
   // strip them before validating and before storing.
   const normalizedPhone = phone.replace(/[\s\-()]/g, '');
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('schools')
+      .select('id, name, created_at')
+      .order('name', { ascending: true })
+      .then(({ data, error: loadError }) => {
+        if (cancelled) return;
+        if (loadError) {
+          setSchoolsError('Could not load schools. Ask your admin to add them, then try again.');
+          return;
+        }
+        setSchools((data ?? []) as School[]);
+      });
+    supabase
+      .from('referrers')
+      .select('id, name, created_at')
+      .order('name', { ascending: true })
+      .then(({ data, error: loadError }) => {
+        if (cancelled || loadError) return;
+        setReferrers((data ?? []) as Referrer[]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSignUp = async () => {
     setError(null);
@@ -47,8 +83,22 @@ export default function SignUpScreen({ navigation }: Props) {
       setError('Enter a valid phone number (10-15 digits).');
       return;
     }
-    if (!referralSource.trim()) {
-      setError('Please tell us how you heard about Mauj.');
+    const choseOther = referrerId === OTHER_REFERRER;
+    if (!referrerId) {
+      setError('Please choose who referred you.');
+      return;
+    }
+    if (choseOther && !otherReferrer.trim()) {
+      setError('Please type who referred you.');
+      return;
+    }
+    const choseOtherSchool = schoolId === OTHER_SCHOOL;
+    if (!schoolId) {
+      setError('Please choose your school.');
+      return;
+    }
+    if (choseOtherSchool && !otherSchool.trim()) {
+      setError('Please type your school.');
       return;
     }
     if (password.length < 6) {
@@ -79,7 +129,12 @@ export default function SignUpScreen({ navigation }: Props) {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       phone: normalizedPhone,
-      referralSource: referralSource.trim(),
+      schoolId: choseOtherSchool ? null : schoolId,
+      otherSchool: choseOtherSchool ? otherSchool.trim() : '',
+      referrerId: choseOther ? null : referrerId,
+      referralSource: choseOther
+        ? otherReferrer.trim()
+        : (referrers.find((person) => person.id === referrerId)?.name ?? ''),
     });
     setSubmitting(false);
     if (signUpError) setError(signUpError);
@@ -143,27 +198,53 @@ export default function SignUpScreen({ navigation }: Props) {
           value={phone}
           onChangeText={setPhone}
         />
-        <TextInput
+        <PasswordField
           style={styles.input}
           placeholder="Password"
-          placeholderTextColor="#999"
-          secureTextEntry
-          autoComplete="new-password"
-          textContentType="newPassword"
           value={password}
           onChangeText={setPassword}
         />
 
-        <Text style={styles.label}>How did you hear about Mauj?</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. friend, Instagram, school"
-          placeholderTextColor="#999"
-          autoComplete="off"
-          value={referralSource}
-          onChangeText={setReferralSource}
+        <Text style={styles.label}>School</Text>
+        <ChoiceSelect
+          value={schoolId}
+          placeholder="Choose"
+          options={[
+            ...schools.map((school) => ({ value: school.id, label: school.name })),
+            { value: OTHER_SCHOOL, label: 'Others' },
+          ]}
+          onSelect={setSchoolId}
         />
+        {schoolId === OTHER_SCHOOL ? (
+          <TextInput
+            style={styles.input}
+            placeholderTextColor="#999"
+            autoComplete="off"
+            value={otherSchool}
+            onChangeText={setOtherSchool}
+          />
+        ) : null}
+        {schoolsError ? <Text style={styles.error}>{schoolsError}</Text> : null}
 
+        <Text style={styles.label}>Referred by</Text>
+        <ChoiceSelect
+          value={referrerId}
+          placeholder="Choose"
+          options={[
+            ...referrers.map((person) => ({ value: person.id, label: person.name })),
+            { value: OTHER_REFERRER, label: 'Others' },
+          ]}
+          onSelect={setReferrerId}
+        />
+        {referrerId === OTHER_REFERRER ? (
+          <TextInput
+            style={styles.input}
+            placeholderTextColor="#999"
+            autoComplete="off"
+            value={otherReferrer}
+            onChangeText={setOtherReferrer}
+          />
+        ) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TouchableOpacity style={styles.button} onPress={handleSignUp} disabled={submitting}>
@@ -197,6 +278,7 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 12,
     fontSize: 16,
+    color: '#111',
   },
   button: {
     backgroundColor: '#4f46e5',

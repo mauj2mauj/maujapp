@@ -2,12 +2,32 @@ export type Role = 'admin' | 'student';
 export type TaskType = 'boolean' | 'duration';
 export type InvitationStatus = 'pending' | 'registered';
 
+export interface School {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface Referrer {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+// Signup value for "Others" on Referred by and School. Not a database row.
+// The typed name is stored on the profile instead.
+export const OTHER_REFERRER = 'other';
+export const OTHER_SCHOOL = 'other';
+
 export interface Profile {
   id: string;
   first_name: string;
   last_name: string;
   email: string;
   phone: string | null;
+  school_id: string | null;
+  other_school: string | null;
+  referrer_id: string | null;
   referral_source: string | null;
   role: Role;
   created_at: string;
@@ -24,6 +44,7 @@ export interface Invitation {
 export interface Task {
   id: string;
   title: string;
+  description: string | null;
   type: TaskType;
   color: string;
   sort_order: number;

@@ -6,6 +6,7 @@ import {
   Modal,
   Platform,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -16,7 +17,9 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../contexts/AuthContext';
 import type { AdminStudentsStackParamList } from '../../../navigation/AdminStudentsStack';
-import type { Invitation, Profile } from '../../../types/database';
+import type { Invitation, Profile, Referrer, School } from '../../../types/database';
+import { OTHER_REFERRER, OTHER_SCHOOL } from '../../../types/database';
+import ChoiceSelect from '../../../components/ChoiceSelect';
 
 type Props = NativeStackScreenProps<AdminStudentsStackParamList, 'StudentList'>;
 
@@ -26,6 +29,8 @@ export default function StudentManagementTab({ navigation }: Props) {
   const { profile } = useAuth();
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [students, setStudents] = useState<Profile[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [referrers, setReferrers] = useState<Referrer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [emailsText, setEmailsText] = useState('');
@@ -33,6 +38,20 @@ export default function StudentManagementTab({ navigation }: Props) {
   const [inviteSummary, setInviteSummary] = useState<string | null>(null);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [schoolFilter, setSchoolFilter] = useState('all');
+  const [referrerFilter, setReferrerFilter] = useState('all');
+  const [schoolsOpen, setSchoolsOpen] = useState(false);
+  const [schoolName, setSchoolName] = useState('');
+  const [schoolError, setSchoolError] = useState<string | null>(null);
+  const [schoolSaving, setSchoolSaving] = useState(false);
+  const [pendingSchoolDelete, setPendingSchoolDelete] = useState<School | null>(null);
+  const [deletingSchool, setDeletingSchool] = useState(false);
+  const [referrersOpen, setReferrersOpen] = useState(false);
+  const [referrerName, setReferrerName] = useState('');
+  const [referrerError, setReferrerError] = useState<string | null>(null);
+  const [referrerSaving, setReferrerSaving] = useState(false);
+  const [pendingReferrerDelete, setPendingReferrerDelete] = useState<Referrer | null>(null);
+  const [deletingReferrer, setDeletingReferrer] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Invitation | null>(null);
   const [editEmail, setEditEmail] = useState('');
@@ -42,9 +61,11 @@ export default function StudentManagementTab({ navigation }: Props) {
   const [deleting, setDeleting] = useState(false);
 
   const loadData = useCallback(async () => {
-    const [invitationsResult, studentsResult] = await Promise.all([
+    const [invitationsResult, studentsResult, schoolsResult, referrersResult] = await Promise.all([
       supabase.from('invitations').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').eq('role', 'student'),
+      supabase.from('schools').select('*').order('name', { ascending: true }),
+      supabase.from('referrers').select('*').order('name', { ascending: true }),
     ]);
 
     if (!invitationsResult.error && invitationsResult.data) {
@@ -52,6 +73,12 @@ export default function StudentManagementTab({ navigation }: Props) {
     }
     if (!studentsResult.error && studentsResult.data) {
       setStudents(studentsResult.data as Profile[]);
+    }
+    if (!schoolsResult.error && schoolsResult.data) {
+      setSchools(schoolsResult.data as School[]);
+    }
+    if (!referrersResult.error && referrersResult.data) {
+      setReferrers(referrersResult.data as Referrer[]);
     }
     setLoading(false);
     setRefreshing(false);
@@ -68,12 +95,88 @@ export default function StudentManagementTab({ navigation }: Props) {
       .channel('student-management-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invitations' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schools' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'referrers' }, loadData)
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [loadData]);
+
+  const handleAddSchool = async () => {
+    setSchoolError(null);
+    const trimmed = schoolName.trim();
+    if (!trimmed) {
+      setSchoolError('Enter a school name.');
+      return;
+    }
+    if (schools.some((school) => school.name.toLowerCase() === trimmed.toLowerCase())) {
+      setSchoolError('That school is already on the list.');
+      return;
+    }
+    setSchoolSaving(true);
+    const { error } = await supabase.from('schools').insert({ name: trimmed });
+    setSchoolSaving(false);
+    if (error) {
+      setSchoolError(error.code === '23505' ? 'That school is already on the list.' : error.message);
+      return;
+    }
+    setSchoolName('');
+    loadData();
+  };
+
+  const handleConfirmDeleteSchool = async () => {
+    if (!pendingSchoolDelete) return;
+    setSchoolError(null);
+    setDeletingSchool(true);
+    const { error } = await supabase.from('schools').delete().eq('id', pendingSchoolDelete.id);
+    setDeletingSchool(false);
+    if (error) {
+      setSchoolError(error.message);
+      return;
+    }
+    if (schoolFilter === pendingSchoolDelete.id) setSchoolFilter('all');
+    setPendingSchoolDelete(null);
+    loadData();
+  };
+
+  const handleAddReferrer = async () => {
+    setReferrerError(null);
+    const trimmed = referrerName.trim();
+    if (!trimmed) {
+      setReferrerError('Enter a name.');
+      return;
+    }
+    if (referrers.some((person) => person.name.toLowerCase() === trimmed.toLowerCase())) {
+      setReferrerError('That person is already on the list.');
+      return;
+    }
+    setReferrerSaving(true);
+    const { error } = await supabase.from('referrers').insert({ name: trimmed });
+    setReferrerSaving(false);
+    if (error) {
+      setReferrerError(error.code === '23505' ? 'That person is already on the list.' : error.message);
+      return;
+    }
+    setReferrerName('');
+    loadData();
+  };
+
+  const handleConfirmDeleteReferrer = async () => {
+    if (!pendingReferrerDelete) return;
+    setReferrerError(null);
+    setDeletingReferrer(true);
+    const { error } = await supabase.from('referrers').delete().eq('id', pendingReferrerDelete.id);
+    setDeletingReferrer(false);
+    if (error) {
+      setReferrerError(error.message);
+      return;
+    }
+    if (referrerFilter === pendingReferrerDelete.id) setReferrerFilter('all');
+    setPendingReferrerDelete(null);
+    loadData();
+  };
 
   const handleBulkInvite = async () => {
     setInviteError(null);
@@ -213,13 +316,41 @@ export default function StudentManagementTab({ navigation }: Props) {
   };
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
+
+  const schoolLabelFor = (student: Profile) => {
+    if (student.school_id) {
+      return schools.find((school) => school.id === student.school_id)?.name ?? student.other_school;
+    }
+    return student.other_school;
+  };
+
+  const referredByLabel = (student: Profile) => {
+    if (student.referrer_id) {
+      return referrers.find((person) => person.id === student.referrer_id)?.name ?? student.referral_source;
+    }
+    return student.referral_source;
+  };
+
   const filteredInvitations = invitations.filter((item) => {
-    if (!normalizedQuery) return true;
     const studentProfile = item.status === 'registered' ? getStudentProfile(item.email) : undefined;
     const name = studentProfile ? `${studentProfile.first_name} ${studentProfile.last_name}` : '';
-    return (
-      item.email.toLowerCase().includes(normalizedQuery) || name.toLowerCase().includes(normalizedQuery)
-    );
+    if (normalizedQuery) {
+      const matchesSearch =
+        item.email.toLowerCase().includes(normalizedQuery) ||
+        name.toLowerCase().includes(normalizedQuery);
+      if (!matchesSearch) return false;
+    }
+    if (schoolFilter === OTHER_SCHOOL) {
+      if (!studentProfile || studentProfile.school_id) return false;
+    } else if (schoolFilter !== 'all' && studentProfile?.school_id !== schoolFilter) {
+      return false;
+    }
+    if (referrerFilter === OTHER_REFERRER) {
+      if (!studentProfile || studentProfile.referrer_id) return false;
+    } else if (referrerFilter !== 'all' && studentProfile?.referrer_id !== referrerFilter) {
+      return false;
+    }
+    return true;
   });
 
   if (loading) {
@@ -261,6 +392,34 @@ export default function StudentManagementTab({ navigation }: Props) {
       {actionError ? <Text style={styles.error}>{actionError}</Text> : null}
       {inviteSummary ? <Text style={styles.summary}>{inviteSummary}</Text> : null}
 
+      <TouchableOpacity style={styles.manageSchools} onPress={() => setSchoolsOpen(true)}>
+        <Text style={styles.manageSchoolsText}>Manage schools</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.manageSchools} onPress={() => setReferrersOpen(true)}>
+        <Text style={styles.manageSchoolsText}>Manage referred by</Text>
+      </TouchableOpacity>
+
+      <ChoiceSelect
+        label="School"
+        value={schoolFilter}
+        options={[
+          { value: 'all', label: 'All schools' },
+          ...schools.map((school) => ({ value: school.id, label: school.name })),
+          { value: OTHER_SCHOOL, label: 'Others' },
+        ]}
+        onSelect={setSchoolFilter}
+      />
+      <ChoiceSelect
+        label="Referred by"
+        value={referrerFilter}
+        options={[
+          { value: 'all', label: 'All' },
+          ...referrers.map((person) => ({ value: person.id, label: person.name })),
+          { value: OTHER_REFERRER, label: 'Others' },
+        ]}
+        onSelect={setReferrerFilter}
+      />
+
       <TextInput
         style={styles.searchInput}
         placeholder="Search by name or email"
@@ -285,13 +444,17 @@ export default function StudentManagementTab({ navigation }: Props) {
         }
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            {normalizedQuery ? 'No students match your search.' : 'No invitations yet.'}
+            {normalizedQuery || schoolFilter !== 'all' || referrerFilter !== 'all'
+              ? 'No students match these filters.'
+              : 'No invitations yet.'}
           </Text>
         }
         renderItem={({ item }) => {
           const studentProfile =
             item.status === 'registered' ? getStudentProfile(item.email) : undefined;
           const name = studentProfile ? `${studentProfile.first_name} ${studentProfile.last_name}` : null;
+          const schoolLabel = studentProfile ? schoolLabelFor(studentProfile) : undefined;
+          const referredBy = studentProfile ? referredByLabel(studentProfile) : undefined;
 
           return (
             <TouchableOpacity
@@ -311,8 +474,9 @@ export default function StudentManagementTab({ navigation }: Props) {
                 {studentProfile?.phone ? (
                   <Text style={styles.rowMeta}>{studentProfile.phone}</Text>
                 ) : null}
-                {studentProfile?.referral_source ? (
-                  <Text style={styles.rowMeta}>via {studentProfile.referral_source}</Text>
+                {schoolLabel ? <Text style={styles.rowMeta}>School: {schoolLabel}</Text> : null}
+                {studentProfile?.referral_source || studentProfile?.referrer_id ? (
+                  <Text style={styles.rowMeta}>Referred by {referredBy}</Text>
                 ) : null}
               </View>
               <View style={styles.rowRight}>
@@ -442,6 +606,198 @@ export default function StudentManagementTab({ navigation }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal
+        visible={schoolsOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSchoolsOpen(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Schools</Text>
+            <Text style={styles.modalBody}>
+              Students pick one of these when they sign up. Use the School filter on this page to
+              see who registered from each school.
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="School name"
+              placeholderTextColor="#999"
+              value={schoolName}
+              onChangeText={setSchoolName}
+            />
+            {schoolError ? <Text style={styles.error}>{schoolError}</Text> : null}
+            <TouchableOpacity
+              style={styles.inviteButton}
+              onPress={handleAddSchool}
+              disabled={schoolSaving}
+            >
+              {schoolSaving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.inviteButtonText}>Add school</Text>
+              )}
+            </TouchableOpacity>
+            <ScrollView style={styles.schoolList}>
+              {schools.length === 0 ? (
+                <Text style={styles.emptyText}>No schools yet.</Text>
+              ) : (
+                schools.map((school) => (
+                  <View key={school.id} style={styles.schoolRow}>
+                    <Text style={styles.schoolName}>{school.name}</Text>
+                    <TouchableOpacity onPress={() => setPendingSchoolDelete(school)} hitSlop={8}>
+                      <Text style={styles.deleteAction}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalCancel, styles.schoolDone]}
+              onPress={() => setSchoolsOpen(false)}
+            >
+              <Text style={styles.modalCancelText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={pendingSchoolDelete !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingSchoolDelete(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Delete school?</Text>
+            <Text style={styles.modalBody}>
+              {pendingSchoolDelete?.name} will be removed from the sign-up list. Students who
+              already chose it will no longer be grouped under that school.
+            </Text>
+            {schoolError ? <Text style={styles.error}>{schoolError}</Text> : null}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => setPendingSchoolDelete(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalDelete]}
+                onPress={handleConfirmDeleteSchool}
+                disabled={deletingSchool}
+              >
+                {deletingSchool ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalSaveText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={referrersOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReferrersOpen(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Referred by</Text>
+            <Text style={styles.modalBody}>
+              Students pick one of these names when they sign up. Others lets them type a name that
+              is not on this list.
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Person's name"
+              placeholderTextColor="#999"
+              value={referrerName}
+              onChangeText={setReferrerName}
+            />
+            {referrerError ? <Text style={styles.error}>{referrerError}</Text> : null}
+            <TouchableOpacity
+              style={styles.inviteButton}
+              onPress={handleAddReferrer}
+              disabled={referrerSaving}
+            >
+              {referrerSaving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.inviteButtonText}>Add person</Text>
+              )}
+            </TouchableOpacity>
+            <ScrollView style={styles.schoolList}>
+              {referrers.length === 0 ? (
+                <Text style={styles.emptyText}>No people yet.</Text>
+              ) : (
+                referrers.map((person) => (
+                  <View key={person.id} style={styles.schoolRow}>
+                    <Text style={styles.schoolName}>{person.name}</Text>
+                    <TouchableOpacity onPress={() => setPendingReferrerDelete(person)} hitSlop={8}>
+                      <Text style={styles.deleteAction}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalCancel, styles.schoolDone]}
+              onPress={() => setReferrersOpen(false)}
+            >
+              <Text style={styles.modalCancelText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={pendingReferrerDelete !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingReferrerDelete(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Remove this person?</Text>
+            <Text style={styles.modalBody}>
+              {pendingReferrerDelete?.name} will be removed from the sign-up list. Students who
+              already chose them will no longer be grouped under that name.
+            </Text>
+            {referrerError ? <Text style={styles.error}>{referrerError}</Text> : null}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => setPendingReferrerDelete(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalDelete]}
+                onPress={handleConfirmDeleteReferrer}
+                disabled={deletingReferrer}
+              >
+                {deletingReferrer ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalSaveText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -469,6 +825,19 @@ const styles = StyleSheet.create({
   inviteButtonText: { color: '#fff', fontWeight: '600' },
   error: { color: '#dc2626', marginBottom: 8 },
   summary: { color: '#059669', marginBottom: 8 },
+  manageSchools: { marginBottom: 12 },
+  manageSchoolsText: { color: '#4f46e5', fontWeight: '700', fontSize: 14 },
+  schoolList: { maxHeight: 220, marginTop: 12 },
+  schoolRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  schoolName: { fontSize: 15, color: '#111', flex: 1, marginRight: 12 },
+  schoolDone: { alignSelf: 'flex-end', marginTop: 12, marginLeft: 0 },
   searchInput: {
     borderWidth: 1,
     borderColor: '#ddd',

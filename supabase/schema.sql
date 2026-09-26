@@ -16,22 +16,51 @@ create extension if not exists pgcrypto with schema extensions;
 -- 1. TABLES
 -- -----------------------------------------------------------------------------
 
+-- Schools a student picks on Sign Up. An admin adds the names from the
+-- Students tab. Deleting a school clears it on existing profiles.
+create table public.schools (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create unique index schools_name_lower_idx on public.schools (lower(btrim(name)));
+
+-- People a student can pick as "Referred by". An admin adds the names from
+-- the Students tab. "Others" is not a row: the student types that name, and
+-- it is stored only on their profile.
+create table public.referrers (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create unique index referrers_name_lower_idx on public.referrers (lower(btrim(name)));
+
 -- One row per user (both admins and students). The id matches auth.users.id
 -- exactly, so this table is a 1:1 extension of Supabase's built-in auth table.
--- phone and referral_source are collected on the Sign Up screen and are
--- nullable on purpose: admins created straight from the Supabase dashboard
--- won't have them, and neither will anyone who registered before we started
--- asking.
+-- phone, school_id, referrer_id, and referral_source are collected on Sign Up
+-- and are nullable on purpose: admins created straight from the Supabase
+-- dashboard won't have them, and neither will anyone who registered before
+-- we started asking. referrer_id is a person from public.referrers.
+-- referral_source is the typed name when the student chooses Others.
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   first_name text not null,
   last_name text not null,
   email text not null unique,
   phone text,
+  school_id uuid references public.schools (id) on delete set null,
+  -- Typed school name when the student picks Others instead of a listed school.
+  other_school text,
+  referrer_id uuid references public.referrers (id) on delete set null,
   referral_source text,
   role text not null check (role in ('student', 'admin')),
   created_at timestamptz not null default now()
 );
+
+create index profiles_school_id_idx on public.profiles (school_id);
+create index profiles_referrer_id_idx on public.profiles (referrer_id);
 
 -- An admin creates one of these per student email before that student
 -- can register. status flips from 'pending' to 'registered' automatically
@@ -65,6 +94,9 @@ create table public.admin_allowlist (
 create table public.tasks (
   id uuid primary key default gen_random_uuid(),
   title text not null,
+  -- Optional note the admin writes. Shown under the title for students and
+  -- in the admin habit list. Null when the habit has no description.
+  description text,
   type text not null check (type in ('boolean', 'duration')),
   color text not null default '#4f46e5',
   sort_order int not null default 0,
@@ -147,12 +179,28 @@ declare
   v_email text;
   v_phone text;
   v_referral_source text;
+  v_school_raw text;
+  v_school_id uuid;
+  v_other_school text;
+  v_referrer_raw text;
+  v_referrer_id uuid;
 begin
   v_email := lower(trim(new.email));
   v_first_name := new.raw_user_meta_data ->> 'first_name';
   v_last_name := new.raw_user_meta_data ->> 'last_name';
   v_phone := nullif(trim(new.raw_user_meta_data ->> 'phone'), '');
   v_referral_source := nullif(trim(new.raw_user_meta_data ->> 'referral_source'), '');
+  v_school_raw := nullif(trim(coalesce(new.raw_user_meta_data ->> 'school_id', '')), '');
+  v_school_id := null;
+  if v_school_raw ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    v_school_id := v_school_raw::uuid;
+  end if;
+  v_other_school := nullif(trim(new.raw_user_meta_data ->> 'other_school'), '');
+  v_referrer_raw := nullif(trim(coalesce(new.raw_user_meta_data ->> 'referrer_id', '')), '');
+  v_referrer_id := null;
+  if v_referrer_raw ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    v_referrer_id := v_referrer_raw::uuid;
+  end if;
 
   if exists (select 1 from public.admin_allowlist where lower(email) = v_email) then
     v_role := 'admin';
@@ -174,10 +222,39 @@ begin
     update public.invitations
     set status = 'registered'
     where id = v_invitation_id;
+
+    if v_school_id is not null and exists (select 1 from public.schools where id = v_school_id) then
+      v_other_school := null;
+    elsif v_other_school is not null then
+      v_school_id := null;
+    else
+      raise exception 'Choose a valid school before registering.';
+    end if;
+
+    if v_referrer_id is not null and exists (select 1 from public.referrers where id = v_referrer_id) then
+      select name into v_referral_source from public.referrers where id = v_referrer_id;
+    elsif v_referral_source is null then
+      raise exception 'Choose who referred you.';
+    else
+      v_referrer_id := null;
+    end if;
   end if;
 
-  insert into public.profiles (id, first_name, last_name, email, phone, referral_source, role)
-  values (new.id, v_first_name, v_last_name, new.email, v_phone, v_referral_source, v_role);
+  insert into public.profiles (
+    id, first_name, last_name, email, phone, school_id, other_school, referrer_id, referral_source, role
+  )
+  values (
+    new.id,
+    v_first_name,
+    v_last_name,
+    new.email,
+    v_phone,
+    case when v_role = 'student' then v_school_id else null end,
+    case when v_role = 'student' then v_other_school else null end,
+    case when v_role = 'student' then v_referrer_id else null end,
+    case when v_role = 'student' then v_referral_source else null end,
+    v_role
+  );
 
   return new;
 end;
@@ -222,6 +299,62 @@ with check (public.is_admin());
 -- Intentionally no policies at all: RLS on + no policy = nobody gets in
 -- through the API. Manage its rows from the Supabase dashboard.
 alter table public.admin_allowlist enable row level security;
+
+-- ---- schools ----
+-- Names are not secret: the Sign Up screen is logged out, so anon must be
+-- able to read them to fill the dropdown. Writes stay admin-only.
+alter table public.schools enable row level security;
+
+create policy "Anyone can view schools"
+on public.schools for select
+to anon, authenticated
+using (true);
+
+create policy "Admins can create schools"
+on public.schools for insert
+to authenticated
+with check (public.is_admin());
+
+create policy "Admins can update schools"
+on public.schools for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+create policy "Admins can delete schools"
+on public.schools for delete
+to authenticated
+using (public.is_admin());
+
+grant select on public.schools to anon, authenticated;
+grant insert, update, delete on public.schools to authenticated;
+
+-- ---- referrers ----
+alter table public.referrers enable row level security;
+
+create policy "Anyone can view referrers"
+on public.referrers for select
+to anon, authenticated
+using (true);
+
+create policy "Admins can create referrers"
+on public.referrers for insert
+to authenticated
+with check (public.is_admin());
+
+create policy "Admins can update referrers"
+on public.referrers for update
+to authenticated
+using (public.is_admin())
+with check (public.is_admin());
+
+create policy "Admins can delete referrers"
+on public.referrers for delete
+to authenticated
+using (public.is_admin());
+
+grant select on public.referrers to anon, authenticated;
+grant insert, update, delete on public.referrers to authenticated;
 
 -- ---- invitations ----
 alter table public.invitations enable row level security;
@@ -333,6 +466,8 @@ insert into public.tasks (title, type, color, sort_order, is_active) values
 alter publication supabase_realtime add table public.profiles;
 alter publication supabase_realtime add table public.daily_logs;
 alter publication supabase_realtime add table public.invitations;
+alter publication supabase_realtime add table public.schools;
+alter publication supabase_realtime add table public.referrers;
 
 -- -----------------------------------------------------------------------------
 -- 8. PRE-SIGNUP INVITATION CHECK (anon-callable)

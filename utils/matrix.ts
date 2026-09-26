@@ -35,6 +35,7 @@ export function getRelevantTasks(activeTasks: Task[], logs: LogWithTask[]): Task
       // task that's no longer active. Removed habits sort last.
       byId.set(log.task_id, {
         ...log.task,
+        description: null,
         is_active: false,
         sort_order: Number.MAX_SAFE_INTEGER,
         created_at: log.created_at,

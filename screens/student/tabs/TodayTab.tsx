@@ -19,6 +19,7 @@ import {
   lastSevenDaysAllComplete,
 } from '../../../utils/studentMotivation';
 import CelebrationModal from '../../../components/CelebrationModal';
+import { titleWeight } from '../../../utils/gurmukhiText';
 
 interface LogRow {
   task: Task;
@@ -242,7 +243,19 @@ export default function TodayTab() {
         renderItem={({ item }) => (
           <View style={styles.row}>
             <View style={styles.rowHeader}>
-              <Text style={[styles.rowTitle, { color: item.task.color }]}>{item.task.title}</Text>
+              <View style={styles.rowText}>
+                <Text
+                  style={[
+                    styles.rowTitle,
+                    { color: item.task.color, fontWeight: titleWeight(item.task.title) },
+                  ]}
+                >
+                  {item.task.title}
+                </Text>
+                {item.task.description ? (
+                  <Text style={styles.rowDescription}>{item.task.description}</Text>
+                ) : null}
+              </View>
               {item.saving ? (
                 <ActivityIndicator size="small" color="#4f46e5" />
               ) : item.justSaved ? (
@@ -318,10 +331,12 @@ const styles = StyleSheet.create({
   rowHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 8,
   },
-  rowTitle: { fontSize: 16, fontWeight: '600', flex: 1, marginRight: 8 },
+  rowText: { flex: 1, marginRight: 8 },
+  rowTitle: { fontSize: 16, fontWeight: '600' },
+  rowDescription: { fontSize: 13, color: '#666', marginTop: 4, lineHeight: 18 },
   savedText: { color: '#059669', fontSize: 13, fontWeight: '600' },
   booleanRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   booleanLabel: { fontSize: 14, color: '#666' },
