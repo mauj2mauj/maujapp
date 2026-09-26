@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import BrandHeader from '../../components/BrandHeader';
-import { PASSWORD_RESET_REDIRECT } from '../../lib/passwordReset';
+import { getPasswordResetRedirect } from '../../lib/passwordReset';
 import { supabase } from '../../lib/supabase';
 import type { AuthStackParamList } from '../../navigation/RootNavigator';
 
@@ -32,7 +32,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
     }
     setSubmitting(true);
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmed, {
-      redirectTo: PASSWORD_RESET_REDIRECT,
+      redirectTo: getPasswordResetRedirect(),
     });
     setSubmitting(false);
     if (resetError) {

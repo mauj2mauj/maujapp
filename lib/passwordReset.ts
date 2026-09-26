@@ -1,6 +1,11 @@
-// The email link opens the installed Android app. Add this exact URL under
-// Supabase → Authentication → URL Configuration → Redirect URLs.
-export const PASSWORD_RESET_REDIRECT = 'mauj://reset-password';
+import * as Linking from 'expo-linking';
+
+// Built when the reset email is sent, so it matches this Expo Go session
+// (exp://your-computer:8081/--/reset-password). In Supabase → Authentication
+// → URL Configuration → Redirect URLs, add: exp://**
+export function getPasswordResetRedirect(): string {
+  return Linking.createURL('reset-password');
+}
 
 export function isPasswordResetUrl(url: string | null): boolean {
   return Boolean(url && url.includes('reset-password'));

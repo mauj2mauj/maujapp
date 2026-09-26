@@ -50,7 +50,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = code
         ? await supabase.auth.exchangeCodeForSession(code)
         : accessToken && refreshToken
-          ? await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+          ? await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            })
           : { error: new Error('This reset link is missing a session.') };
       if (!cancelled && error) setPasswordRecovery(false);
     };

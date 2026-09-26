@@ -361,8 +361,8 @@ export default function StudentManagementTab({ navigation }: Props) {
     );
   }
 
-  return (
-    <View style={styles.container}>
+  const listHeader = (
+    <View>
       <View style={styles.inviteSection}>
         <Text style={styles.inviteLabel}>Invite students</Text>
         <TextInput
@@ -371,7 +371,7 @@ export default function StudentManagementTab({ navigation }: Props) {
           placeholderTextColor="#999"
           autoCapitalize="none"
           multiline
-          numberOfLines={4}
+          numberOfLines={2}
           textAlignVertical="top"
           value={emailsText}
           onChangeText={setEmailsText}
@@ -392,12 +392,14 @@ export default function StudentManagementTab({ navigation }: Props) {
       {actionError ? <Text style={styles.error}>{actionError}</Text> : null}
       {inviteSummary ? <Text style={styles.summary}>{inviteSummary}</Text> : null}
 
-      <TouchableOpacity style={styles.manageSchools} onPress={() => setSchoolsOpen(true)}>
-        <Text style={styles.manageSchoolsText}>Manage schools</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.manageSchools} onPress={() => setReferrersOpen(true)}>
-        <Text style={styles.manageSchoolsText}>Manage referred by</Text>
-      </TouchableOpacity>
+      <View style={styles.manageRow}>
+        <TouchableOpacity style={styles.manageSchools} onPress={() => setSchoolsOpen(true)}>
+          <Text style={styles.manageSchoolsText}>Manage schools</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.manageSchools} onPress={() => setReferrersOpen(true)}>
+          <Text style={styles.manageSchoolsText}>Manage referred by</Text>
+        </TouchableOpacity>
+      </View>
 
       <ChoiceSelect
         label="School"
@@ -420,6 +422,7 @@ export default function StudentManagementTab({ navigation }: Props) {
         onSelect={setReferrerFilter}
       />
 
+      <Text style={styles.studentsLabel}>Students</Text>
       <TextInput
         style={styles.searchInput}
         placeholder="Search by name or email"
@@ -428,10 +431,16 @@ export default function StudentManagementTab({ navigation }: Props) {
         value={searchQuery}
         onChangeText={setSearchQuery}
       />
+    </View>
+  );
 
+  return (
+    <View style={styles.container}>
       <FlatList
+        style={styles.list}
         data={filteredInvitations}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={listHeader}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
@@ -814,7 +823,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
     fontSize: 15,
-    minHeight: 90,
+    minHeight: 56,
   },
   inviteButton: {
     backgroundColor: '#4f46e5',
@@ -825,7 +834,10 @@ const styles = StyleSheet.create({
   inviteButtonText: { color: '#fff', fontWeight: '600' },
   error: { color: '#dc2626', marginBottom: 8 },
   summary: { color: '#059669', marginBottom: 8 },
-  manageSchools: { marginBottom: 12 },
+  list: { flex: 1 },
+  manageRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 4 },
+  studentsLabel: { fontSize: 13, fontWeight: '700', color: '#333', marginBottom: 6 },
+  manageSchools: { marginRight: 16, marginBottom: 8 },
   manageSchoolsText: { color: '#4f46e5', fontWeight: '700', fontSize: 14 },
   schoolList: { maxHeight: 220, marginTop: 12 },
   schoolRow: {
